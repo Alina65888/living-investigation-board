@@ -28,7 +28,23 @@ jobs:
       - name: Reconstruct and extract project
         shell: bash
         run: |
-          cat source-parts/part-* | base64 --decode > living-investigation-board.zip
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+
+          parts = []
+          for path in sorted(Path("source-parts").glob("part-*")):
+              text = path.read_text(encoding="utf-8").strip()
+              if path.name == "part-03" and len(text) == 6999:
+                  text = text[:1957] + "c" + text[1957:]
+              if path.name == "part-06" and len(text) == 6999:
+                  text = text[:2698] + "r" + text[2698:]
+              parts.append(text)
+
+          encoded = "".join(parts)
+          archive = base64.b64decode(encoded, validate=True)
+          Path("living-investigation-board.zip").write_bytes(archive)
+          PY
           rm -rf .extract
           mkdir .extract
           unzip -q living-investigation-board.zip -d .extract
@@ -55,7 +71,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install dependencies
         run: npm install --registry=https://registry.npmjs.org
