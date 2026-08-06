@@ -1,4 +1,4 @@
-name: Expand source parts
+name: Import source and deploy
 
 on:
   push:
@@ -9,9 +9,15 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: source-import-and-pages
+  cancel-in-progress: true
 
 jobs:
-  expand:
+  import-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,6 +38,26 @@ jobs:
             .extract/living-investigation-board/ ./
           rm -rf .extract living-investigation-board.zip source-parts
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build application
+        run: npm run build
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
       - name: Commit extracted source
         shell: bash
         run: |
@@ -44,3 +70,14 @@ jobs:
             git commit -m "Import Living Investigation Board source"
             git push
           fi
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: import-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
