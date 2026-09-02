@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "test": "vitest run"
+    "dev": "vite docs",
+    "build": "node scripts/build.mjs",
+    "preview": "vite preview --outDir dist",
+    "test": "node --check docs/app-v4.js && node --check docs/board-v8.js && node --check docs/hq.js"
   },
   "dependencies": {
     "@react-three/drei": "10.7.7",

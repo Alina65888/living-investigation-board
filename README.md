@@ -1,73 +1,33 @@
-# Living Investigation Board
+# Living Project HQ
 
-A browser-based, cinematic 3D investigation workspace built with React, React Three Fiber, Three.js, Zustand, GSAP, and a custom Verlet rope solver.
+Браузерный штаб проектов: задачи, этапы, сроки, зависимости, риски, команда, календарь и живая 3D-доска.
 
-## What is implemented
+## Возможности
 
-- True 3D cork board, wooden frame, depth, PBR lighting, shadows, filmic tone mapping, bloom, vignette, and atmospheric dust.
-- Low-FOV perspective camera with inertial Miro/Figma-style pan and zoom.
-- Upload PNG, JPEG, WebP, GIF, and PDF files. PDF uploads render the first page as a board preview.
-- 3D evidence objects: photographs, documents, sticky notes, suspect cards, location cards, press clippings, fingerprints, and investigator notes.
-- Multi-select with Shift/Ctrl/Cmd click, group dragging, duplication, deletion, JSON import/export, local persistence, undo, and redo.
-- Physical evidence strings rendered as dynamic tube geometry—not SVG, Canvas, CSS borders, or line primitives.
-- Each rope uses 53 particles with Verlet integration, iterative distance constraints, gravity, damping, sag, overshoot, oscillation, growth animation, and sleeping.
-- Rope materials: red yarn, twine, cotton, nylon, and blue thread.
-- Metadata-ready graph model for confidence, timestamps, labels, tags, sources, and future AI annotations.
+- обзор текущих действий, рисков и согласований;
+- список задач, Kanban, календарь и Timeline;
+- проекты с этапами, контрольными точками, участниками и критическим путём;
+- командная загрузка и задачи по исполнителям;
+- зависимости и автоматическая блокировка следующих задач;
+- 3D-доска с физическими нитями и упрощённый режим без WebGL;
+- локальное сохранение, экспорт и импорт резервной копии;
+- адаптивный интерфейс для компьютера и телефона.
 
-## Live demo
-
-After the GitHub Pages workflow completes, the project will be available at:
+## Публикация
 
 https://alina65888.github.io/living-investigation-board/
 
-## Run
+GitHub Pages публикует содержимое каталога `docs` ветки `main`.
 
-```bash
-npm install
-npm run dev
-```
+## Хранение данных
 
-Production build:
+Рабочие данные сохраняются в IndexedDB текущего браузера. Для переноса на другое устройство используется JSON-резервная копия через меню «Данные».
 
-```bash
-npm run build
-npm run preview
-```
+## Разработка
 
-Tests:
+Приложение в `docs` не требует сборки. Исходные файлы:
 
-```bash
-npm test
-```
-
-## Interaction
-
-- Drag the background to pan.
-- Use the wheel or trackpad to zoom.
-- Drag evidence to move it; connected ropes physically follow and settle.
-- Shift/Ctrl/Cmd-click to select multiple items.
-- Choose the link tool, then click two evidence cards to grow a physical rope between them.
-- `V`: select mode. `C`: connection mode. `Delete`: remove selection. `Ctrl/Cmd+D`: duplicate.
-- `Ctrl/Cmd+Z`: undo. `Ctrl/Cmd+Shift+Z` or `Ctrl/Cmd+Y`: redo.
-
-## Architecture
-
-- `domain/`: serializable evidence graph and metadata contracts.
-- `store/`: Zustand document state, selection, transactions, history, persistence, import/export.
-- `physics/`: decoupled custom Verlet/PBD rope solver.
-- `components/scene/`: rendering engine, board, evidence objects, camera, dynamic tube geometry, rope renderer.
-- `components/ui/`: upload, creation tools, inspector, history controls, status UI.
-- `utils/`: PDF preview, file serialization, procedural cork and wood textures.
-
-## Production scaling path
-
-The included CPU solver is intentionally readable and modular. For several hundred simultaneously active ropes, retain the graph/store API and replace only the solver/renderer backends:
-
-1. Pack rope particles into texture or storage buffers.
-2. Solve constraints in WebGPU compute passes or ping-pong WebGL textures.
-3. Generate camera-facing ribbon/tube vertices in the vertex shader.
-4. Use visibility culling, distance LOD, adaptive particle counts, sleeping islands, and fixed-step worker simulation.
-5. Instance evidence backings and pins; atlas paper materials and thumbnails.
-6. Persist binary assets in object storage and board operations in an append-only collaborative event log.
-
-The current implementation already sleeps settled ropes, updates geometry in place, avoids line primitives, and keeps physics decoupled from React state.
+- `docs/app-v4.js` — проекты, задачи, фильтры и основные режимы;
+- `docs/board-v8.js` — живая доска и связи;
+- `docs/hq.js` — 3D-карта зависимостей;
+- `docs/style.css`, `docs/v4.css`, `docs/visual-v8.css`, `docs/dashboard-v12.css` — интерфейс и адаптивность.
