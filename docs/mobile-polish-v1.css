@@ -1,0 +1,38 @@
+/* Mobile UX polish v1 — project board */
+@media(max-width:760px){
+  html,body,#app{overflow:hidden!important;}
+  .page-head{display:block!important;margin-bottom:14px!important;}
+  .page-head h1{font-size:22px!important;letter-spacing:-.02em;}
+  .summary-grid{gap:8px!important;}
+  .summary{padding:12px!important;min-height:92px;}
+  .summary span{font-size:10px!important;}
+  .summary strong{font-size:24px!important;}
+  .task-table{min-width:620px;}
+  .task-table td,.task-table th{font-size:13px!important;padding:12px!important;}
+  .kanban{gap:14px!important;}
+  .kan-card{width:290px!important;min-height:130px;padding:16px!important;}
+  .kan-card h3{font-size:15px!important;line-height:1.35!important;}
+  .kan-meta{font-size:12px!important;}
+  .hq-toolbar{border-radius:18px!important;padding:8px!important;}
+  .hq-toolbar .btn{font-size:13px!important;white-space:nowrap;}
+  .hq-canvas{touch-action:none;}
+  .inspector-inner{padding:16px!important;}
+}
+
+/* prevent ugly text squeezing */
+.task-title,.kan-card h3,.note-card,.task-card{
+  word-break:normal!important;
+  overflow-wrap:anywhere;
+  hyphens:none;
+}
+
+/* cleaner board cards */
+.note-card,.task-card,.kan-card{
+  letter-spacing:normal!important;
+}
+
+/* bottom navigation breathing room */
+@media(max-width:760px){
+ .view-tabs{height:58px!important;}
+ .tab{font-size:13px!important;}
+}
