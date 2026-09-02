@@ -1,0 +1,18 @@
+/* UX redesign v1: clean board, readable cards, mobile-first */
+:root{--ux-line:#303747}
+*{box-sizing:border-box}
+body{overflow-x:hidden}
+#app{min-height:100vh}
+.board-card,.note,.task-card,.sticky-note{font-size:16px!important;line-height:1.35!important;min-width:260px;max-width:340px;padding:20px!important;border-radius:18px!important}
+.board-card h1,.board-card h2,.note h2,.task-card h2{font-size:22px!important;letter-spacing:-.02em}
+.board-card p,.note p,.task-card p{font-size:15px!important;white-space:normal!important}
+.board-area,.board,.canvas{padding:32px!important}
+@media(max-width:700px){
+ body{font-size:16px}
+ .board-area,.board,.canvas{padding:16px!important}
+ .task-card,.note,.sticky-note,.board-card{width:calc(100vw - 40px)!important;max-width:none!important;min-height:180px}
+ .toolbar{position:fixed!important;bottom:12px;left:12px;right:12px;width:auto!important;border-radius:24px!important;z-index:50}
+ .toolbar button{min-height:48px;font-size:14px}
+}
+.command-panel{border:1px solid var(--ux-line);border-radius:24px;padding:20px}
+.team-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover}
