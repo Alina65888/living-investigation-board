@@ -1,76 +1,11 @@
-/* War Room redesign v11 — Project HQ visual system */
-:root{
-  --hq-bg:#0b1018;
-  --hq-panel:#111927;
-  --hq-card:#172334;
-  --hq-paper:#f4efe4;
-  --hq-text:#f5f7fb;
-  --hq-muted:#9aa8bd;
-  --hq-accent:#7ce7d5;
-  --hq-line:rgba(255,255,255,.08);
-}
-
-body{
-  background:
-    radial-gradient(circle at 20% 10%,rgba(124,231,213,.12),transparent 35%),
-    radial-gradient(circle at 90% 80%,rgba(118,169,255,.12),transparent 35%),
-    var(--hq-bg);
-  color:var(--hq-text);
-}
-
-/* workspace feeling */
-#app{
-  min-height:100vh;
-}
-
-.hq-card,.task-card,.note-card{
-  border-radius:18px!important;
-  border:1px solid var(--hq-line)!important;
-  box-shadow:0 20px 45px rgba(0,0,0,.25);
-  transition:.2s ease;
-}
-
-.hq-card:hover,.task-card:hover,.note-card:hover{
-  transform:translateY(-3px);
-  border-color:rgba(124,231,213,.35)!important;
-}
-
-/* readable notes */
-.note-card,.task-card{
-  font-size:15px;
-  line-height:1.35;
-}
-
-/* buttons */
-button{
-  border-radius:12px!important;
-  transition:.2s ease;
-}
-button:hover{
-  transform:translateY(-1px);
-}
-
-/* mobile */
-@media(max-width:700px){
-  .sidebar{
-    width:100%!important;
-  }
-  .task-card,.note-card{
-    min-width:280px;
-  }
-  .board-canvas{
-    overflow:auto;
-    touch-action:none;
-  }
-}
-
-/* command center */
-.warroom-header{
-  backdrop-filter:blur(14px);
-  background:rgba(11,16,24,.75);
-  border-bottom:1px solid var(--hq-line);
-}
-
-.risk-high{border-left:4px solid #ff8c8f!important}
-.risk-medium{border-left:4px solid #ffc857!important}
-.risk-ok{border-left:4px solid #7ce7d5!important}
+/* War Room v11.1 — Project HQ visual system */
+:root{--hq-bg:#080d16;--hq-line:rgba(255,255,255,.09);--hq-text:#f5f7fb}
+body{background:radial-gradient(circle at 20% 10%,rgba(124,231,213,.14),transparent 35%),radial-gradient(circle at 90% 10%,rgba(118,169,255,.14),transparent 35%),var(--hq-bg);color:var(--hq-text)}
+#app{min-height:100vh}
+.hq-card,.task-card,.note-card,.board-card,.panel{border-radius:18px!important;border:1px solid var(--hq-line)!important;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025))!important;box-shadow:0 20px 45px rgba(0,0,0,.28);transition:.2s ease}
+.hq-card:hover,.task-card:hover,.note-card:hover{transform:translateY(-3px);border-color:rgba(124,231,213,.4)!important}
+.note-card,.task-card{font-size:15px;line-height:1.4}
+button{border-radius:12px!important;transition:.2s ease}button:hover{transform:translateY(-1px)}
+.warroom-header{backdrop-filter:blur(14px);background:rgba(8,13,22,.8);border-bottom:1px solid var(--hq-line)}
+.risk-high{border-left:4px solid #ff8c8f!important}.risk-medium{border-left:4px solid #ffc857!important}.risk-ok{border-left:4px solid #7ce7d5!important}
+@media(max-width:700px){.sidebar{width:100%!important}.task-card,.note-card{min-width:260px}.board,.board-canvas,.canvas{overflow:auto!important}.toolbar{position:sticky;top:0;z-index:10}}
