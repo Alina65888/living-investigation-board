@@ -1,17 +1,25 @@
-/* War Room v12 — team workspace */
-:root{--hq-bg:#080d16;--hq-line:rgba(255,255,255,.09);--hq-text:#f5f7fb;--hq-accent:#7ce7d5}
-body{background:radial-gradient(circle at 20% 10%,rgba(124,231,213,.14),transparent 35%),radial-gradient(circle at 90% 10%,rgba(118,169,255,.14),transparent 35%),var(--hq-bg);color:var(--hq-text)}
+/* War Room v13 — responsive redesign */
+:root{--hq-bg:#080d16;--hq-line:rgba(255,255,255,.10);--hq-text:#f5f7fb;--hq-accent:#7ce7d5}
+*{box-sizing:border-box}
+body{background:radial-gradient(circle at 15% 10%,rgba(124,231,213,.12),transparent 35%),radial-gradient(circle at 85% 10%,rgba(118,169,255,.12),transparent 35%),var(--hq-bg);color:var(--hq-text);font-family:Inter,system-ui,sans-serif}
 #app{min-height:100vh}
-.hq-card,.task-card,.note-card,.board-card,.panel,.team-card,.project-card{border-radius:18px!important;border:1px solid var(--hq-line)!important;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025))!important;box-shadow:0 20px 45px rgba(0,0,0,.28);transition:.2s ease}
-.hq-card:hover,.task-card:hover,.note-card:hover,.team-card:hover,.project-card:hover{transform:translateY(-3px);border-color:rgba(124,231,213,.4)!important}
-.note-card,.task-card{font-size:15px;line-height:1.4}
-.team-strip{display:flex;gap:14px;overflow-x:auto;padding:8px 4px 16px}
-.team-card{min-width:180px;padding:16px}
-.team-avatar{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(124,231,213,.18);font-weight:700}
-.workload-bar{height:6px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden}
-.workload-fill{height:100%;background:var(--hq-accent)}
-.project-card{padding:20px}
-button{border-radius:12px!important;transition:.2s ease}button:hover{transform:translateY(-1px)}
-.warroom-header{backdrop-filter:blur(14px);background:rgba(8,13,22,.8);border-bottom:1px solid var(--hq-line)}
-.risk-high{border-left:4px solid #ff8c8f!important}.risk-medium{border-left:4px solid #ffc857!important}.risk-ok{border-left:4px solid #7ce7d5!important}
-@media(max-width:700px){.sidebar{width:100%!important}.task-card,.note-card,.project-card{min-width:260px}.team-card{min-width:150px}.board,.board-canvas,.canvas{overflow:auto!important}.toolbar{position:sticky;top:0;z-index:10}}
+.panel,.hq-card,.task-card,.note-card,.board-card,.team-card,.project-card{border-radius:20px!important;border:1px solid var(--hq-line)!important;background:rgba(15,20,30,.78)!important;box-shadow:0 18px 40px rgba(0,0,0,.25)}
+.task-card,.note-card{padding:18px!important;font-size:16px!important;line-height:1.45!important;letter-spacing:0!important;word-break:normal!important}
+.task-card h1,.task-card h2,.task-card h3,.note-card h1,.note-card h2,.note-card h3{font-size:18px;line-height:1.25}
+.team-strip{display:flex;gap:14px;overflow:auto;padding:10px}
+.team-card{min-width:190px;padding:16px}
+.team-avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(124,231,213,.15)}
+.workload-bar{height:8px;border-radius:20px;background:rgba(255,255,255,.12)}
+.workload-fill{height:100%;border-radius:20px;background:var(--hq-accent)}
+button{min-height:42px;border-radius:14px!important}
+.warroom-header{backdrop-filter:blur(16px);background:rgba(8,13,22,.9)}
+.board,.board-canvas,.canvas{min-height:500px}
+@media(max-width:700px){
+ body{font-size:16px;overflow-x:hidden}
+ .panel{margin:12px!important;padding:16px!important}
+ .toolbar{position:sticky;top:0;z-index:20;background:#080d16;padding:8px}
+ .task-card,.note-card,.board-card{min-width:300px;max-width:calc(100vw - 32px)}
+ .task-card *,.note-card *{max-width:100%;white-space:normal!important}
+ .board,.board-canvas,.canvas{height:calc(100vh - 240px);overflow:auto!important}
+ .bottom-nav{padding-bottom:env(safe-area-inset-bottom)}
+}
