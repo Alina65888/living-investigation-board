@@ -1,5 +1,5 @@
 /* UX redesign v1: clean board, readable cards, mobile-first */
-:root{--ux-line:#303747}
+:root{--ux-line:#3A3A3C}
 *{box-sizing:border-box}
 body{overflow-x:hidden}
 #app{min-height:100vh}
