@@ -1,5 +1,5 @@
 /* War Room v13 — responsive redesign */
-:root{--hq-bg:#080d16;--hq-line:rgba(255,255,255,.10);--hq-text:#f5f7fb;--hq-accent:#7ce7d5}
+:root{--hq-bg:#0C0C0E;--hq-line:rgba(255,255,255,.10);--hq-text:#FFFFFF;--hq-accent:#0A84FF}
 *{box-sizing:border-box}
 body{background:radial-gradient(circle at 15% 10%,rgba(124,231,213,.12),transparent 35%),radial-gradient(circle at 85% 10%,rgba(118,169,255,.12),transparent 35%),var(--hq-bg);color:var(--hq-text);font-family:Inter,system-ui,sans-serif}
 #app{min-height:100vh}
@@ -17,7 +17,7 @@ button{min-height:42px;border-radius:14px!important}
 @media(max-width:700px){
  body{font-size:16px;overflow-x:hidden}
  .panel{margin:12px!important;padding:16px!important}
- .toolbar{position:sticky;top:0;z-index:20;background:#080d16;padding:8px}
+ .toolbar{position:sticky;top:0;z-index:20;background:#0C0C0E;padding:8px}
  .task-card,.note-card,.board-card{min-width:300px;max-width:calc(100vw - 32px)}
  .task-card *,.note-card *{max-width:100%;white-space:normal!important}
  .board,.board-canvas,.canvas{height:calc(100vh - 240px);overflow:auto!important}
