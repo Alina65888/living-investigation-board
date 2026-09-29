@@ -140,7 +140,7 @@ export class CorkBoard{
     this.animateTo({z,x:w<r.width-i.left-i.right?i.left+(r.width-i.left-i.right-w)/2-x1*z:i.left+16-x1*z,y:i.top+24-y1*z});
   }
   reset(){const r=this.vp.getBoundingClientRect(),i=this.insets();this.animateTo({z:isMobile()?.7:1,x:(r.width+i.left-i.right)/2,y:i.top+60})}
-  focus(id){const c=this.cards.get(id);if(!c)return;const w=c.w*U/2,h=c.h*U/2;this.animateTo(this.frame(c.x*U-w*1.6,-c.y*U-h*1.4,c.x*U+w*1.6,-c.y*U+h*1.4,1.6));this.select(id,true)}
+  focus(id){const c=this.cards.get(id);if(!c)return;const group=[c,...this.links.filter(l=>l.a===id||l.b===id).map(l=>this.cards.get(l.a===id?l.b:l.a))];let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;for(const g of group){const w=g.w*U/2,h=g.h*U/2;x1=Math.min(x1,g.x*U-w);x2=Math.max(x2,g.x*U+w);y1=Math.min(y1,-g.y*U-h-16);y2=Math.max(y2,-g.y*U+h)}const pad=group.length>1?40:c.w*U*.3;this.animateTo(this.frame(x1-pad,y1-pad,x2+pad,y2+pad,group.length>1?1.05:1.4));this.select(id,true)}
   // --- interaction ---
   moveCard(id,x,y){const c=this.cards.get(id),el=this.els.get(id);if(!c||!el)return;c.x=x;c.y=y;el.style.left=(x*U-c.w*U/2)+'px';el.style.top=(-y*U-c.h*U/2)+'px';this.drawLinks()}
   bind(){
