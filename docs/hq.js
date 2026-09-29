@@ -1,30 +1,65 @@
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.js';
+// «Связи»: dependency map drawn as an investigation board — one case zone per project, yarn between tasks.
+import {CorkBoard} from './corkboard.js';
 
-const STATUS_ACCENT={planned:'#8E8E93',doing:'#007AFF',blocked:'#FF3B30',approval:'#FF9500',done:'#34C759'};
-const STATUS_BG={planned:'#FFFFFF',doing:'#FFFFFF',blocked:'#FFF1F0',approval:'#FFF8EC',done:'#F1FBF4'};
-const REL={blocks:0xFF3B30,depends:0x007AFF,approval:0xFF9500,related:0x8E8E93};
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-const mobile=()=>matchMedia('(max-width:760px)').matches;
-function tex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');draw(x,w,h);const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=4;return t}
-function wrap(x,text,px,py,max,line,maxLines=4){let s='',n=0;for(const word of String(text||'').split(/\s+/)){const q=s?`${s} ${word}`:word;if(x.measureText(q).width>max&&s){x.fillText(s,px,py);s=word;py+=line;n++;if(n>=maxLines-1)break}else s=q}if(s&&n<maxLines)x.fillText(s,px,py)}
-function cardTexture(t,p){return tex(900,560,(x,w,h)=>{x.fillStyle=STATUS_BG[t.status]||'#efe6d6';x.fillRect(0,0,w,h);x.fillStyle=STATUS_ACCENT[t.status]||'#756957';x.fillRect(0,0,w,18);x.fillStyle='#8E8E93';x.font='700 30px system-ui';wrap(x,(p?.name||'БЕЗ ПРОЕКТА').toUpperCase(),48,72,w-96,35,2);x.fillStyle='#000000';x.font='800 56px system-ui';wrap(x,t.title,48,154,w-96,62,4);x.fillStyle='#6E6E73';x.font='700 29px system-ui';const m=[t.assignee||'Без ответственного',t.dueDate?`до ${t.dueDate}`:'без срока'].join(' · ');wrap(x,m,48,h-60,w-96,36,2);if(t.status==='blocked'){x.fillStyle='#FF3B30';x.font='800 28px system-ui';x.fillText('БЛОКИРОВКА',w-245,68)}})}
-function zoneTexture(p,count,risks){return tex(1100,260,(x,w,h)=>{x.fillStyle='#FFFFFF';x.fillRect(0,0,w,h);x.strokeStyle='#DCDCE0';x.lineWidth=5;x.strokeRect(4,4,w-8,h-8);x.fillStyle='#000000';x.font='800 56px system-ui';wrap(x,p.name,42,80,w-84,62,2);x.fillStyle='#8E8E93';x.font='30px system-ui';x.fillText(`${count} задач · ${risks} рисков`,42,164);x.fillStyle=p.color||'#007AFF';x.fillRect(42,205,220,10)})}
-class Rope{constructor(scene,a,b,type,getRisk){this.scene=scene;this.a=a;this.b=b;this.getRisk=getRisk;this.N=24;this.pos=[];this.prev=[];const[s,e]=this.ends();this.rest=s.distanceTo(e)/(this.N-1)*1.045;for(let i=0;i<this.N;i++){const p=s.clone().lerp(e,i/(this.N-1));p.y-=Math.sin(Math.PI*i/(this.N-1))*.36;this.pos.push(p);this.prev.push(p.clone())}this.mat=new THREE.MeshStandardMaterial({color:REL[type]||REL.related,roughness:.8,transparent:true,opacity:.9});this.mesh=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(this.pos),54,.045,6),this.mat);scene.add(this.mesh)}ends(){const a=new THREE.Vector3(0,.82,.22),b=new THREE.Vector3(0,.82,.22);this.a.localToWorld(a);this.b.localToWorld(b);return[a,b]}tick(dt){const[s,e]=this.ends(),r=clamp(this.getRisk?.()||.2,0,1);this.rest=s.distanceTo(e)/(this.N-1)*(1.055-r*.025);this.pos[0].copy(s);this.pos[this.N-1].copy(e);for(let i=1;i<this.N-1;i++){const p=this.pos[i],o=p.clone(),v=p.clone().sub(this.prev[i]).multiplyScalar(.958+r*.014);p.add(v);p.y-=(1.8+r*.8)*dt*dt;this.prev[i].copy(o)}for(let k=0;k<5;k++){this.pos[0].copy(s);this.pos[this.N-1].copy(e);for(let i=0;i<this.N-1;i++){const p=this.pos[i],n=this.pos[i+1],d=n.clone().sub(p),l=Math.max(d.length(),1e-4),f=(l-this.rest)/l;if(i)p.addScaledVector(d,f*.5);if(i+1!==this.N-1)n.addScaledVector(d,-f*.5)}}const old=this.mesh.geometry;this.mesh.geometry=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(this.pos),58,.045+r*.007,6);old.dispose()}destroy(){this.scene.remove(this.mesh);this.mesh.geometry.dispose();this.mat.dispose()}}
+const CARD_W=4.1,CARD_H=3.05,GAP_X=1.75,GAP_Y=.6,PAD=.6,HEAD=1.5,ZONE_GAP=1.6,ROW_MAX=30;
+const plural=(n,one,few,many)=>{const a=Math.abs(n)%100,b=a%10;return `${n} ${a>10&&a<20?many:b===1?one:b>=2&&b<=4?few:many}`};
+const overdue=t=>!!t?.dueDate&&t.status!=='done'&&new Date(t.dueDate+'T23:59:59')<Date.now();
+// Column = how many tasks must finish first, so every project reads left → right like a chain of evidence.
+function levels(tasks,relations){
+  const ids=new Set(tasks.map(t=>t.id)),edges=[],level=new Map(tasks.map(t=>[t.id,0]));
+  for(const r of relations){const[a,b]=r.type==='depends'?[r.targetId,r.sourceId]:[r.sourceId,r.targetId];if(r.type!=='related'&&ids.has(a)&&ids.has(b))edges.push([a,b])}
+  for(let k=0;k<tasks.length;k++){let changed=false;for(const[a,b]of edges)if(level.get(b)<level.get(a)+1){level.set(b,level.get(a)+1);changed=true}if(!changed)break}
+  return level;
+}
 
 export class HQView{
-  constructor(el,cb={}){this.el=el;this.cb=cb;this.renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(devicePixelRatio,mobile()?1.3:1.65));this.renderer.setSize(el.clientWidth,el.clientHeight);this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=THREE.PCFSoftShadowMap;this.renderer.toneMapping=THREE.ACESFilmicToneMapping;this.renderer.outputColorSpace=THREE.SRGBColorSpace;this.renderer.domElement.style.touchAction='none';el.appendChild(this.renderer.domElement);this.scene=new THREE.Scene;this.scene.background=new THREE.Color(0xF2F2F7);this.scene.fog=new THREE.FogExp2(0xF2F2F7,.014);this.camera=new THREE.PerspectiveCamera(mobile()?34:29,el.clientWidth/el.clientHeight,.1,120);this.camera.position.set(0,.5,mobile()?24:26);this.target=new THREE.Vector3;this.zoom=mobile()?24:26;this.root=new THREE.Group;this.root.rotation.x=-.012;this.scene.add(this.root);this.scene.add(new THREE.HemisphereLight(0xFFFFFF,0xD9DDE3,1.08));const key=new THREE.SpotLight(0xFFF6E8,110,85,Math.PI*.26,.6,1.45);key.position.set(-10,13,18);key.castShadow=true;key.shadow.mapSize.set(mobile()?1024:2048,mobile()?1024:2048);this.scene.add(key,key.target);const fill=new THREE.PointLight(0xBFD4EA,18,42);fill.position.set(12,-5,12);this.scene.add(fill);const floor=new THREE.Mesh(new THREE.PlaneGeometry(140,90),new THREE.MeshStandardMaterial({color:0xE9E9EC,roughness:1}));floor.position.z=-1;floor.receiveShadow=true;this.scene.add(floor);this.cards=new Map;this.zones=[];this.ropes=[];this.mode='select';this.connectFrom=null;this.selectedId=null;this.ray=new THREE.Raycaster;this.pointer=new THREE.Vector2;this.plane=new THREE.Plane(new THREE.Vector3(0,0,1),-.35);this.drag=null;this.pan=false;this.last={x:0,y:0};this.pointers=new Map;this.lastPinch=null;this.bind();this.clock=new THREE.Clock;this.loop();this.ro=new ResizeObserver(()=>this.resize());this.ro.observe(el)}
-  bind(){const c=this.renderer.domElement;c.addEventListener('pointerdown',e=>{c.setPointerCapture?.(e.pointerId);this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});this.last={x:e.clientX,y:e.clientY};if(this.pointers.size===2){this.drag=null;this.pan=false;const a=[...this.pointers.values()];this.lastPinch=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);return}const hit=this.hit(e);if(hit){const id=hit.userData.taskId;if(this.mode==='connect'){if(!this.connectFrom){this.connectFrom=id;this.select(id)}else if(this.connectFrom!==id){this.cb.onCreateRelation?.(this.connectFrom,id);this.connectFrom=null;this.setMode('select')}return}this.select(id);const q=this.world(e),g=this.cards.get(id);this.drag={id,start:q,origin:g.position.clone()};this.cb.onSelect?.(id)}else{this.pan=true;this.select(null);this.cb.onSelect?.(null)}});c.addEventListener('pointermove',e=>{if(this.pointers.has(e.pointerId))this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(this.pointers.size===2){const a=[...this.pointers.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(this.lastPinch)this.zoom=clamp(this.zoom-(d-this.lastPinch)*.026,12,48);this.lastPinch=d;return}if(this.drag){const q=this.world(e),d=q.clone().sub(this.drag.start),o=this.drag.origin,g=this.cards.get(this.drag.id);g?.position.set(o.x+d.x,o.y+d.y,o.z)}else if(this.pan){this.target.x-=(e.clientX-this.last.x)*.019*(this.zoom/26);this.target.y+=(e.clientY-this.last.y)*.019*(this.zoom/26);this.last={x:e.clientX,y:e.clientY}}});const up=e=>{if(this.drag){const g=this.cards.get(this.drag.id);if(g)this.cb.onMove?.(this.drag.id,{x:g.position.x,y:g.position.y})}this.drag=null;this.pan=false;this.pointers.delete(e.pointerId);if(this.pointers.size<2)this.lastPinch=null};c.addEventListener('pointerup',up);c.addEventListener('pointercancel',up);c.addEventListener('wheel',e=>{e.preventDefault();this.zoom=clamp(this.zoom+e.deltaY*.012,12,48)},{passive:false});c.addEventListener('dblclick',e=>{const h=this.hit(e);if(h){this.focus(h.userData.taskId);this.cb.onOpen?.(h.userData.taskId)}})}
-  world(e){const r=this.renderer.domElement.getBoundingClientRect();this.pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);this.ray.setFromCamera(this.pointer,this.camera);const q=new THREE.Vector3;this.ray.ray.intersectPlane(this.plane,q);return q}
-  hit(e){this.world(e);return this.ray.intersectObjects([...this.cards.values()].map(g=>g.userData.face),false)[0]?.object||null}
-  setMode(m){this.mode=m;this.connectFrom=null}
-  select(id){this.selectedId=id;for(const[k,g]of this.cards){const on=k===id;g.userData.face.material.emissive.setHex(on?0xCCE4FF:0);g.position.z=on?.62:.42}}
-  clear(){for(const r of this.ropes)r.destroy();this.ropes=[];for(const g of this.cards.values()){g.traverse(o=>{o.geometry?.dispose?.();if(o.material){const a=Array.isArray(o.material)?o.material:[o.material];a.forEach(m=>{m.map?.dispose?.();m.dispose?.()})}});this.root.remove(g)}this.cards.clear();for(const z of this.zones){z.traverse(o=>{o.geometry?.dispose?.();o.material?.map?.dispose?.();o.material?.dispose?.()});this.root.remove(z)}this.zones=[]}
-  setData({projects,tasks,relations}){const old=this.selectedId;this.clear();const pm=new Map(projects.map(p=>[p.id,p])),group=new Map(projects.map(p=>[p.id,[]]));for(const t of tasks){if(!group.has(t.projectId))group.set(t.projectId,[]);group.get(t.projectId).push(t)}const cols=Math.max(1,Math.ceil(Math.sqrt(Math.max(projects.length,1)))),zones=new Map;projects.forEach((p,i)=>{const row=Math.floor(i/cols),col=i%cols,zx=(col-(cols-1)/2)*14.5,zy=(1-row)*10.2;zones.set(p.id,{x:zx,y:zy});const list=group.get(p.id)||[],risks=list.filter(t=>t.status==='blocked'||this.isOverdue(t)).length;const panel=new THREE.Group;panel.position.set(zx,zy,-.18);const board=new THREE.Mesh(new THREE.BoxGeometry(12.8,8.4,.24),new THREE.MeshStandardMaterial({color:0xE5E5EA,roughness:.9,metalness:.02}));board.receiveShadow=true;panel.add(board);const label=new THREE.Mesh(new THREE.PlaneGeometry(7.2,1.7),new THREE.MeshBasicMaterial({map:zoneTexture(p,list.length,risks)}));label.position.set(-2.25,2.9,.15);panel.add(label);this.root.add(panel);this.zones.push(panel)});tasks.forEach(t=>{const b=zones.get(t.projectId)||{x:0,y:0},list=group.get(t.projectId)||[],idx=list.indexOf(t),x=t.position?.x??b.x+((idx%3)-1)*3.65,y=t.position?.y??b.y+1.25-Math.floor(idx/3)*2.65;const g=new THREE.Group;g.position.set(x,y,.42);g.userData.taskId=t.id;const face=new THREE.Mesh(new THREE.BoxGeometry(3.45,2.05,.12),new THREE.MeshStandardMaterial({map:cardTexture(t,pm.get(t.projectId)),roughness:.82,emissive:0}));face.castShadow=true;face.userData.taskId=t.id;g.userData.face=face;g.add(face);const pin=new THREE.Mesh(new THREE.SphereGeometry(.11,14,10),new THREE.MeshStandardMaterial({color:t.status==='blocked'?0xFF3B30:0xFF3B30,metalness:.35,roughness:.3}));pin.position.set(0,.87,.16);g.add(pin);this.root.add(g);this.cards.set(t.id,g)});relations.forEach(r=>{const a=this.cards.get(r.sourceId),b=this.cards.get(r.targetId);if(a&&b){this.ropes.push(new Rope(this.scene,a,b,r.type,()=>Math.max(this.taskRisk(tasks.find(t=>t.id===r.sourceId)),this.taskRisk(tasks.find(t=>t.id===r.targetId)),r.type==='blocks'?.75:.25)))}});if(old&&this.cards.has(old))this.select(old)}
-  isOverdue(t){return !!t?.dueDate&&t.status!=='done'&&new Date(t.dueDate+'T23:59:59')<Date.now()}
-  taskRisk(t){if(!t)return 0;if(t.status==='blocked')return 1;if(this.isOverdue(t))return .9;if(t.priority==='high')return .55;return .2}
-  fit(){if(!this.cards.size){this.target.set(0,0,0);this.zoom=mobile()?24:26;return}const box=new THREE.Box3;for(const g of this.cards.values())box.expandByPoint(g.position);const c=box.getCenter(new THREE.Vector3()),s=box.getSize(new THREE.Vector3());this.target.set(c.x,c.y,0);this.zoom=clamp(Math.max(s.x,s.y)*(mobile()?1.32:1.08)+13,mobile()?20:17,mobile()?40:48)}
-  focus(id){const g=this.cards.get(id);if(!g)return;this.target.set(g.position.x,g.position.y,0);this.zoom=mobile()?14:16;this.select(id)}
-  resize(){const w=this.el.clientWidth,h=this.el.clientHeight;if(!w||!h)return;this.camera.aspect=w/h;this.camera.fov=mobile()?34:29;this.camera.updateProjectionMatrix();this.renderer.setPixelRatio(Math.min(devicePixelRatio,mobile()?1.3:1.65));this.renderer.setSize(w,h)}
-  loop(){this.raf=requestAnimationFrame(()=>this.loop());const dt=Math.min(this.clock.getDelta(),.03);this.camera.position.x+=(this.target.x-this.camera.position.x)*.08;this.camera.position.y+=(this.target.y+.55-this.camera.position.y)*.08;this.camera.position.z+=(this.zoom-this.camera.position.z)*.08;this.camera.lookAt(this.target.x,this.target.y,0);for(const r of this.ropes)r.tick(dt);this.renderer.render(this.scene,this.camera)}
-  destroy(){cancelAnimationFrame(this.raf);this.ro?.disconnect();this.clear();this.renderer.dispose();this.renderer.domElement.remove()}
+  constructor(el,cb={}){
+    this.cb=cb;
+    this.board=new CorkBoard(el,{cards:[],links:[]},{
+      onSelect:id=>cb.onSelect?.(id),
+      onEdit:id=>cb.onOpen?.(id),
+      onMove:(id,pos)=>cb.onMove?.(id,pos),
+      onConnect:(a,b)=>cb.onCreateRelation?.(a,b),
+      onLink:link=>cb.onLink?.(link),
+      onMode:mode=>cb.onMode?.(mode)
+    },{insets:()=>({top:matchMedia('(max-width: 760px)').matches?64:78,bottom:16})});
+  }
+  get mode(){return this.board.mode}
+  get selectedLink(){return this.board.selectedLink}
+  title(id){return this.board.cards.get(id)?.title||'Задача'}
+  setData({projects,tasks,relations,stages=[]}){
+    const cards=[],byProject=new Map(projects.map(p=>[p.id,[]])),stageName=new Map(stages.map(s=>[s.id,s.name]));
+    for(const t of tasks){if(!byProject.has(t.projectId))byProject.set(t.projectId,[]);byProject.get(t.projectId).push(t)}
+    const zones=[...byProject.keys()].map(id=>({id,project:projects.find(p=>p.id===id),list:byProject.get(id)})).filter(z=>z.project||z.list.length);
+    for(const z of zones){
+      const lv=levels(z.list,relations),cols=[];
+      for(const t of z.list){const c=lv.get(t.id);(cols[c]??=[]).push(t)}
+      z.cols=cols.filter(Boolean);z.w=PAD*2+Math.max(1,z.cols.length)*(CARD_W+GAP_X)-GAP_X;z.h=HEAD+PAD*2+Math.max(1,...z.cols.map(c=>c.length))*(CARD_H+GAP_Y)-GAP_Y;
+    }
+    const rowMax=matchMedia('(max-width: 760px)').matches?0:ROW_MAX,rows=[];for(const z of zones){const row=rows.at(-1);if(row&&row.w+ZONE_GAP+z.w<=rowMax){row.items.push(z);row.w+=ZONE_GAP+z.w}else rows.push({items:[z],w:z.w})}
+    let top=0;
+    for(const row of rows){
+      const rowH=Math.max(...row.items.map(z=>z.h));let left=-row.w/2;
+      for(const z of row.items){
+        const p=z.project,risks=z.list.filter(t=>t.status==='blocked'||overdue(t)).length;
+        cards.push({id:`zone:${z.id}`,entityType:'zone',fixed:true,x:left+z.w/2,y:-(top+rowH/2),w:z.w,h:rowH,title:p?.name||'Без проекта',body:`${plural(z.list.length,'задача','задачи','задач')} · ${plural(risks,'риск','риска','рисков')}`,color:p?.color});
+        z.cols.forEach((col,ci)=>col.forEach((t,ri)=>{
+          const x=left+PAD+CARD_W/2+ci*(CARD_W+GAP_X),y=-(top+HEAD+PAD+CARD_H/2+ri*(CARD_H+GAP_Y));
+          cards.push({id:t.id,entityType:'task',compact:true,x:t.relationsPos?.x??x,y:t.relationsPos?.y??y,w:CARD_W,h:CARD_H,title:t.title,kicker:stageName.get(t.stageId)||'',status:t.status,assignee:t.assignee||'Без ответственного',dueDate:t.dueDate||'',overdue:overdue(t),priority:t.priority});
+        }));
+        left+=z.w+ZONE_GAP;
+      }
+      top+=rowH+ZONE_GAP+.6;
+    }
+    const risky=new Set(tasks.filter(t=>t.status==='blocked'||overdue(t)).map(t=>t.id));
+    const links=relations.map(r=>({a:r.sourceId,b:r.targetId,type:r.type,id:r.id,risk:risky.has(r.sourceId)||risky.has(r.targetId)}));
+    this.board.setData({cards,links});
+  }
+  get view(){return{...this.board.view}}
+  restore(view){this.board.view={...view};this.board.apply()}
+  select(id){this.board.select(id)}
+  setMode(mode){this.board.setMode(mode)}
+  fit(){this.board.fit()}
+  focus(id){this.board.focus(id)}
+  destroy(){this.board.destroy()}
 }
