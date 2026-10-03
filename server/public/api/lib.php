@@ -612,7 +612,7 @@ function handle_api(string $path, string $method, array $me): void
                         foreach (['title' => 300, 'description' => 5000, 'expectedResult' => 5000] as $k => $n) if (is_string(prop($p, $k))) $t->$k = clip($p->$k, $n);
                         if (property_exists($p, 'lead')) {
                             $t->lead = clip($p->lead, 120);
-                            $t->contributors = array_values(array_filter(array_map(fn($x) => clip($x, 120), (array)prop($p, 'contributors', [])), fn($x) => $x !== '' && $x !== $t->lead));
+                            $t->contributors = array_values(array_filter(array_map(fn($x) => clip($x, 120), (array)prop($p, 'contributors', prop($t, 'contributors', []))), fn($x) => $x !== '' && $x !== $t->lead));
                             $t->assignee = implode(', ', array_filter(array_merge([$t->lead], $t->contributors), fn($x) => $x !== ''));
                         }
                         if (property_exists($p, 'dueDate') && is_iso_date($p->dueDate)) $t->dueDate = (string)$p->dueDate;

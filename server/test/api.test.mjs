@@ -203,6 +203,20 @@ test('documents storage is for administrators only and refuses stale writes', as
   assert.equal((await stranger('/api/docs')).status, 401);
 });
 
+test('quick assignment preserves helpers; explicit contributor changes still apply', async () => {
+  await boss('/api/task-actions', { action: 'assign', ids: ['t1'], patch: { lead: 'Анна', contributors: ['Иван'] } });
+  await boss('/api/task-actions', { action: 'assign', ids: ['t1', 't2'], patch: { lead: ADMIN.name } });
+  let t = (await boss('/api/workspace')).data.data.tasks.find(t => t.id === 't1');
+  assert.deepEqual(t.contributors, ['Иван']);
+  assert.ok(t.assigneeEmails.includes('ivan@example.com'));
+  const before = structuredClone(t);
+  await boss('/api/task-actions', { action: 'assign', ids: ['t1'], patch: { dueDate: '2027-01-12' } });
+  t = (await boss('/api/workspace')).data.data.tasks.find(t => t.id === 't1');
+  assert.equal(t.dueDate, '2027-01-12');assert.equal(t.status, before.status);assert.deepEqual(t.contributors, before.contributors);
+  await boss('/api/task-actions', { action: 'assign', ids: ['t1'], patch: { lead: ADMIN.name, contributors: [] } });
+  assert.deepEqual((await boss('/api/workspace')).data.data.tasks.find(t => t.id === 't1').contributors, []);
+});
+
 test('password reset, deactivation, last admin and logout', async () => {
   const reset = await boss('/api/team', { name: 'Иван', email: 'ivan@example.com', role: 'member', active: true, resetPassword: true });
   assert.ok(reset.data.tempPassword);
