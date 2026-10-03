@@ -7,7 +7,7 @@
     "dev": "vite docs",
     "build": "node scripts/build.mjs",
     "preview": "vite preview --outDir dist",
-    "test": "node --check docs/app-v4.js && node --check docs/board-v8.js && node --check docs/corkboard.js && node --check docs/hq.js && node --check docs/workspace-store.js && node --check docs/team-ui.js"
+    "test": "node --check docs/app-v4.js && node --check docs/board-v8.js && node --check docs/corkboard.js && node --check docs/hq.js && node --check docs/workspace-store.js && node --check docs/team-ui.js && node --check docs/auth-ui.js && node --check docs/task-workflow.js && node --check server/src/worker.js"
   },
   "dependencies": {
     "@react-three/drei": "10.7.7",

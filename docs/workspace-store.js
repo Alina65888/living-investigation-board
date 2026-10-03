@@ -1,10 +1,14 @@
-// One storage contract for the original board, on GitHub Pages and Sites.
-export const TEAM_URL='https://living-project-hq-alina.amullakaeva97.chatgpt.site';
-export const hosted=location.origin===TEAM_URL;
+// One storage contract for the personal board (GitHub Pages, IndexedDB) and the team server (Cloudflare, /api/*).
+// Address of the deployed team server; leave empty until it is published (the "team mode" links stay hidden).
+export const TEAM_URL='';
+// Team mode = this page is served by the team server. GitHub Pages and plain static hosting answer 404 on /api/me.
+async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;try{const r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'});if(!r.ok)return null;const x=await r.json();return x&&x.team===true?x:null}catch{return null}}
+export const auth=await detectTeam();
+export const hosted=!!auth;
 export const session={me:null,team:[],revision:0};
 let database,queue=Promise.resolve(),pending=0,conflict=false;
 function localDb(){return database||(database=new Promise((resolve,reject)=>{const r=indexedDB.open('living-project-hq',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('workspace'))r.result.createObjectStore('workspace')};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)}))}
-export async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'});let result;try{result=await r.json()}catch{throw new Error('Не удалось подключиться. Обновите страницу и войдите в аккаунт.')}if(!r.ok){const e=new Error(result.error||'Не удалось выполнить действие');e.status=r.status;throw e}return result}
+export async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'});let result;try{result=await r.json()}catch{throw new Error('Не удалось подключиться. Обновите страницу и войдите в аккаунт.')}if(!r.ok){const e=new Error(result.error||'Не удалось выполнить действие');e.status=r.status;if(r.status===401&&hosted&&!path.startsWith('/api/login')&&!path.startsWith('/api/setup'))setTimeout(()=>location.reload(),1200);throw e}return result}
 export async function loadWorkspace(){if(hosted){const x=await api('/api/workspace');Object.assign(session,{me:x.me,team:x.team,revision:x.revision});return x.data}const d=await localDb();return new Promise((res,rej)=>{const r=d.transaction('workspace','readonly').objectStore('workspace').get('main');r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
 export function isAdmin(){return !hosted||session.me?.role==='admin'}
 export function canEditTask(t){return isAdmin()||t.assigneeEmail===session.me?.email||t.assigneeEmails?.includes(session.me?.email)||t.createdBy===session.me?.email}

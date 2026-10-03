@@ -196,3 +196,29 @@ button,input,select,textarea{font-family:var(--ib-sans)!important}
 /* the detail panel can always be closed, on desktop too */
 .close-inspector{display:grid!important;place-items:center;flex:none;width:36px;height:36px;border-radius:10px!important;border:1px solid var(--line2)!important;background:var(--panel)!important;color:var(--text)!important;font-size:20px!important;cursor:pointer}
 .close-inspector:hover{background:var(--panel2)!important}
+
+/* ---------- team mode: sign-in ---------- */
+.auth-page{min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:var(--ib-cork);background-image:radial-gradient(circle at 30% 20%,rgba(255,240,210,.25),transparent 60%),radial-gradient(circle at 80% 90%,rgba(40,20,5,.35),transparent 55%)}
+.auth-card{width:min(420px,100%);display:flex;flex-direction:column;gap:14px;padding:30px 28px 24px;background:#fffdf7;border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,.15),0 24px 60px rgba(40,20,5,.45);border-top:6px solid #c0262d;transform:rotate(-.4deg);font-family:var(--ib-sans)}
+.auth-brand{display:flex;align-items:center;gap:10px;font:400 12px/1 var(--ib-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+.auth-mark{width:12px;height:12px;border-radius:50%;background:#c0262d;box-shadow:0 0 0 4px rgba(192,38,45,.2)}
+.auth-card h1{margin:4px 0 0;font:700 28px/1.2 var(--ib-slab);color:var(--text)}
+.auth-lead{margin:0;color:var(--muted);font-size:15px;line-height:1.45}
+.auth-field{display:flex;flex-direction:column;gap:6px}
+.auth-field span{font:700 13px var(--ib-sans);color:var(--muted)}
+.auth-field input{padding:12px 13px;border:1.5px solid var(--line2);border-radius:10px;background:#fff;font:400 16px var(--ib-sans);color:var(--text);outline:none}
+.auth-field input:focus{border-color:#8c6a3f;box-shadow:0 0 0 3px rgba(140,106,63,.18)}
+.auth-error{min-height:1em;margin:0;color:#b3261e;font-weight:700;font-size:14px}
+.auth-error:empty{display:none}
+.auth-submit{padding:13px;border:0;border-radius:10px;background:var(--text);color:#fff8ec;font:700 16px var(--ib-sans);cursor:pointer}
+.auth-submit:disabled{opacity:.6;cursor:progress}
+.auth-note{margin:0;font-size:13px;color:var(--soft);text-align:center}
+.temp-pass{white-space:pre-wrap;padding:14px;border-radius:10px;background:var(--panel2);border:1px dashed var(--line2);font:400 14px/1.5 var(--ib-mono);color:var(--text);user-select:all}
+.account-btn{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.team-badge.overdue{background:var(--st-blocked)!important;color:#fff!important}
+.team-badge.open{background:var(--st-approval)!important;color:#fff!important}
+.team-badge.review{background:var(--st-doing)!important;color:#fff!important}
+.team-badge.resolved{background:var(--st-done)!important;color:#fff!important}
+.modal .data-note,.modal p{color:var(--muted)!important}
+.modal .field input,.modal .field select,.modal .field textarea{background:#fff!important;border:1.5px solid var(--line2)!important;border-radius:10px!important;color:var(--text)!important}
+.modal .field label{color:var(--muted)!important}
