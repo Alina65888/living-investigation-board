@@ -1,0 +1,63 @@
+# Publishes the team version (docs/ + server/public/) to ordinary PHP hosting (reg.ru) over FTP.
+# Repository secrets (see server/README.md): FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_DIR, ADMIN_EMAIL.
+# Without FTP secrets it only builds the site folder and attaches it as a downloadable artifact.
+name: Deploy to hosting
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'server/**', '.github/workflows/deploy-hosting.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-hosting
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      FTP_SERVER: ${{ secrets.FTP_SERVER }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check PHP syntax
+        run: for f in server/public/api/*.php; do php -l "$f"; done
+      - name: Build the site folder
+        run: node server/build.mjs
+      - name: Attach the site folder for manual upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-for-hosting
+          path: server/dist/site/
+          include-hidden-files: true
+          retention-days: 30
+      - name: Upload to hosting (FTPS)
+        id: ftps
+        if: env.FTP_SERVER != ''
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_DIR }}
+          local-dir: server/dist/site/
+          protocol: ftps
+          security: loose
+      - name: Upload to hosting (FTP, if FTPS is not available)
+        if: env.FTP_SERVER != '' && steps.ftps.outcome == 'failure'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_DIR }}
+          local-dir: server/dist/site/
+          protocol: ftp
+      - name: Notice
+        if: env.FTP_SERVER == ''
+        run: echo "::notice::FTP secrets are not set — download the 'site-for-hosting' artifact and upload it to the site folder manually."

@@ -32,6 +32,7 @@ function newPasswordScreen(me){
 // Resolves when the app may start; otherwise shows a sign-in screen and never resolves.
 export function authGate(){
   if(!hosted)return Promise.resolve();
+  if(auth.serverError){screen('Сайт настраивается',esc(auth.serverError),[],'Проверить снова');document.querySelector('.auth-card').onsubmit=e=>{e.preventDefault();location.reload()};return new Promise(()=>{})}
   if(auth.me&&!auth.me.mustChange)return Promise.resolve();
   if(auth.me)newPasswordScreen(auth.me);else if(auth.setup)setupScreen();else loginScreen();
   return new Promise(()=>{});
