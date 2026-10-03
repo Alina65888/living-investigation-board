@@ -8,6 +8,11 @@ on:
     branches: [main]
     paths: ['docs/**', 'server/**', '.github/workflows/deploy-hosting.yml']
   workflow_dispatch:
+    inputs:
+      full_upload:
+        description: 'Загрузить все файлы заново (если на сайте видна заглушка хостинга или старая версия)'
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-hosting
@@ -72,6 +77,7 @@ jobs:
           local-dir: server/dist/site/
           protocol: ftps
           security: loose
+          dangerous-clean-slate: ${{ inputs.full_upload == true }}
       - name: Upload to hosting (FTP, if FTPS is not available)
         if: env.FTP_SERVER != '' && steps.ftps.outcome == 'failure'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -82,6 +88,7 @@ jobs:
           server-dir: ${{ steps.ftp.outputs.dir }}
           local-dir: server/dist/site/
           protocol: ftp
+          dangerous-clean-slate: ${{ inputs.full_upload == true }}
       - name: Notice
         if: env.FTP_SERVER == ''
         run: echo "::notice::FTP secrets are not set — download the 'site-for-hosting' artifact and upload it to the site folder manually."
