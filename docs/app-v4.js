@@ -1,11 +1,11 @@
-import {createWorkflow} from './task-workflow.js';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js';
-import {createTeamUI} from './team-ui.js'
-import {authGate,openAccount} from './auth-ui.js'
-import {createDocumentsUI} from './documents.js';
-import {HQView} from './hq.js'
-import {LINKS} from './corkboard.js';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js';
+import {createWorkflow} from './task-workflow.js?v=28';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=28';
+import {createTeamUI} from './team-ui.js?v=28'
+import {authGate,openAccount} from './auth-ui.js?v=28'
+import {createDocumentsUI} from './documents.js?v=28';
+import {HQView} from './hq.js?v=28'
+import {LINKS} from './corkboard.js?v=28';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=28';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На согласовании'],['done','Выполнена']];
