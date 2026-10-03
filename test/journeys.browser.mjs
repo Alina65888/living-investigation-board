@@ -21,7 +21,7 @@ function fixture(){const task=(id,title,extra={})=>({id,title,projectId:'p1',sta
 async function setup(role='admin',width=1440){
   const context=await browser.newContext({viewport:{width,height:960},timezoneId:'Europe/Moscow'}),page=await context.newPage();
   let data=fixture(),revision=1,docs={parties:[],deals:[],version:1},docRevision=0;
-  const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',created_at:new Date().toISOString()}];
+  const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',response:'Реквизиты будут утром',created_at:new Date().toISOString()}];
   page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
   const me=team[role==='admin'?0:1];
@@ -41,7 +41,7 @@ async function setup(role='admin',width=1440){
       if(b.action==='submit'){t.result={text:b.text,url:b.url,fileIds:b.fileIds,review:null};t.status=t.requiresReview||b.review?'approval':'done';}
       if(b.action==='accept'){t.status='done';t.result={...t.result,review:{decision:'accept',note:b.note}};}
       if(b.action==='return'){t.status='doing';t.result={...t.result,review:{decision:'return',note:b.note}};}
-      if(b.action==='assign')for(const id of b.ids){const task=data.tasks.find(t=>t.id===id);Object.assign(task,b.patch);if(b.patch.lead)task.assignee=b.patch.lead;}
+      if(b.action==='assign')for(const id of b.ids){const task=data.tasks.find(t=>t.id===id);Object.assign(task,b.patch);if('lead' in b.patch){task.contributors=(b.patch.contributors??task.contributors??[]).filter(n=>n!==b.patch.lead);task.assignee=[b.patch.lead,...task.contributors].filter(Boolean).join(', ');}}
       revision++;out={ok:true,revision};
     }else if(path==='/api/task-thread'){
       if(b){(threads[b.id]??=[]).push({body:b.text,author:me.email,created_at:new Date().toISOString()});out={ok:true};}else out=threads[u.searchParams.get('id')]||[];
@@ -65,6 +65,21 @@ try{
   await p.waitForFunction(()=>!document.querySelector('[data-accept-task="approval"]'));
   assert.equal(a.data().tasks.find(t=>t.id==='approval').status,'done');
   assert.equal(await p.locator('.modal-backdrop').count(),0,'accept must not require a second dialog');
+  await p.locator('[data-all-tasks]').click();
+  await p.locator('[data-quick="dueDate"][data-id="simple"]').click();
+  await p.locator('[data-quick-form] [name=value]').fill('2026-12-17');
+  await p.locator('[data-quick-form] [type=submit]').click();
+  await p.locator('[data-quick-form]').waitFor({state:'detached'});
+  assert.equal(a.data().tasks.find(t=>t.id==='simple').dueDate,'2026-12-17');
+  assert.equal(a.data().tasks.find(t=>t.id==='simple').status,'doing');
+  await p.locator('[data-select="simple"]').check();await p.locator('[data-select="review"]').check();
+  await p.locator('[data-bulk-key="lead"]').click();
+  await p.locator('[data-quick-form] [name=value]').selectOption(team[0].name);
+  await p.locator('[data-quick-form] [type=submit]').click();await p.locator('[data-quick-form]').waitFor({state:'detached'});
+  assert.equal(a.data().tasks.find(t=>t.id==='simple').lead,team[0].name);
+  assert.equal(a.data().tasks.find(t=>t.id==='review').lead,team[0].name);
+  assert.equal(a.data().tasks.find(t=>t.id==='later').lead,team[1].name);
+  await p.locator('[data-filter="decisions"]').click();
   await p.locator('[data-answer="help"]').click();
   await p.locator('textarea[name=response]').fill('Реквизиты приложены');
   await p.locator('select[name=status]').selectOption('resolved');
@@ -72,6 +87,8 @@ try{
   await p.locator('#newTask').click();
   assert.equal(await p.locator('#mProject').inputValue(),'','no arbitrary first project');
   assert.equal(await p.locator('#mAssignee').evaluate(e=>e.tagName),'SELECT');
+  assert.equal(await p.locator('#mProject').isVisible(),false);
+  assert.equal(await p.locator('[data-task-form] input:visible,[data-task-form] select:visible').count(),3);
   await p.locator('#mTitle').fill('Новая задача с проверкой');
   await p.locator('#mAssignee').selectOption(team[1].name);
   await p.locator('.task-options summary').click();
@@ -80,9 +97,12 @@ try{
   await p.locator('.modal [type=submit]').click();await waitForSaved(p);
   const created=a.data().tasks.find(t=>t.title==='Новая задача с проверкой');
   assert.ok(created);assert.equal(created.projectId,'');assert.equal(created.requiresReview,true);assert.equal(created.checklist.length,2);assert.equal(created.expectedResult,'Подписанный документ');
-  await p.locator('#inspector [data-close]').click();
+  assert.equal(await p.locator('#inspector').evaluate(e=>e.classList.contains('empty')),true,'quick creation must keep the task list open');
   await p.locator('[data-project="p1"]').click();await p.locator('#newTask').click();assert.equal(await p.locator('#mProject').inputValue(),'p1');await p.locator('.modal [data-close]').click();
   await p.locator('[data-scope]').selectOption('today');
+  await p.locator('tr[data-task="review"] [data-quick="dueDate"]').click();
+  assert.equal(await p.locator('#inspector').evaluate(e=>e.classList.contains('empty')),true);
+  await p.locator('[data-quick-form] [data-cancel]').click();
   await p.locator('tr[data-task="review"]').click();await p.goBack();
   assert.equal(await p.locator('[data-scope]').inputValue(),'today');
   assert.equal(await p.locator('[data-project-select]').inputValue(),'p1','project context survives back');
@@ -102,8 +122,14 @@ try{
 
   const m=await setup('member'),q=m.page;
   assert.equal(await q.locator('.view-tabs .tab').count(),3);
+  await q.locator('[data-answer-alert]').getByText('Реквизиты будут утром',{exact:true}).waitFor();
+  await q.locator('[data-seen="help"]').click();
+  await q.reload();await q.locator('[data-my-questions]').waitFor();
+  assert.equal(await q.locator('[data-answer-alert] article').count(),0);
+  assert.equal(await q.locator('[data-response-count]').isVisible(),false);
   assert.equal(await q.locator('details.my-group').getAttribute('open'),null);
   await q.locator('[data-my-questions]').getByText('Нужны реквизиты',{exact:true}).waitFor();
+  await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-help-task="simple"]').click();
   await q.locator('.modal [name=reason]').selectOption('deadline');
   await q.locator('.modal [name=detail]').fill('Площадка ответит завтра');
@@ -117,6 +143,7 @@ try{
   await q.locator('[data-done="review"]').click();
   await q.locator('.modal textarea[name=text]').waitFor();assert.equal(m.data().tasks.find(t=>t.id==='review').status,'doing');
   await q.locator('.modal [data-close]').click();
+  await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-attach="simple"]').click();await q.locator('.modal [name=url]').fill('https://example.test/material');await q.locator('.modal [type=submit]').click();
   await q.locator('.modal').waitFor({state:'detached'});assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');assert.ok(m.calls.some(c=>c.path==='/api/task-thread'&&c.body.text.includes('https://example.test/material')));
   await q.locator('#inspector [data-close]').click();
@@ -125,6 +152,18 @@ try{
   await q.locator('[data-done="review"]').click();await q.locator('.modal textarea[name=text]').fill('Готовый договор');await q.locator('.modal [type=submit]').click();await q.locator('.modal').waitFor({state:'detached'});assert.equal(m.data().tasks.find(t=>t.id==='review').status,'approval');
   if(shotDir)await q.screenshot({path:resolve(shotDir,'member-desktop.png')});
   assert.deepEqual(m.errors,[]);console.log('PASS member: review gate, attach without completion, complete, undo, submit');await m.context.close();
+
+  const employeePhone=await setup('member',390),ep=employeePhone.page;
+  await ep.locator('[data-answer-alert] article').waitFor();
+  await ep.locator('[data-seen="help"]').click();
+  assert.equal(await ep.locator('[data-bulk-key],[data-quick]').count(),0,'members must not see assignment controls');
+  await ep.locator('[data-jump="my-group-2"]').click();
+  if(shotDir)await ep.screenshot({path:resolve(shotDir,'member-mobile.png')});
+  assert.ok(await ep.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'member page fits mobile');
+  await ep.locator('[data-done="simple"]').click();await waitForSaved(ep);
+  assert.equal(employeePhone.data().tasks.find(t=>t.id==='simple').status,'done');
+  assert.equal(await ep.locator('.modal').count(),0);
+  assert.deepEqual(employeePhone.errors,[]);await employeePhone.context.close();
 
   const mobile=await setup('admin',390),r=mobile.page;
   await r.getByRole('heading',{name:'Что требует решения',exact:true}).waitFor();
