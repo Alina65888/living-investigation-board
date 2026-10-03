@@ -298,3 +298,22 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 }
 .docs-page input[type=checkbox]{width:18px!important;height:18px;padding:0!important;flex:none;accent-color:var(--text);box-shadow:none!important}
 .docs-grid .check-row{align-self:end;margin:0 0 10px}
+
+/* Done in one tap, executor's home, calendar events */
+.wf-row{display:flex;align-items:center;gap:12px}
+.wf-done{flex:none;align-self:center;box-sizing:border-box;padding:0!important;min-height:0!important;width:34px!important;height:34px!important;border-radius:50%;border:2px solid var(--line2);background:var(--panel);color:transparent;font:800 17px/1 var(--ib-sans);cursor:pointer;display:inline-grid;place-items:center;transition:background .15s,border-color .15s,color .15s}
+.wf-done:hover,.wf-done:focus-visible{border-color:#2f7d4f;color:#2f7d4f}
+.wf-done.is-done{background:#2f7d4f;border-color:#2f7d4f;color:#fff}
+.wf-done.is-wait{color:var(--muted);border-style:dashed;cursor:default}
+.my-add{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.my-add input[name=title]{flex:1 1 260px;min-width:0;font:600 16px/1.3 var(--ib-sans);padding:12px 14px;border:1.5px solid var(--line2);border-radius:10px;background:var(--panel)}
+.my-add input[type=date]{flex:0 1 170px;padding:11px 12px;border:1.5px solid var(--line2);border-radius:10px;background:var(--panel);font:600 14px var(--ib-sans)}
+.my-group h2{display:flex;align-items:center;gap:8px;font-size:18px;margin:0 0 8px}
+.my-group.overdue h2{color:#b42318}
+.my-done summary{cursor:pointer;font:700 15px var(--ib-sans);color:var(--muted)}
+.my-event{gap:14px}.my-event b{font:700 15px/1.3 var(--ib-sans)}.my-event .ev-date{flex:none;min-width:96px;font:700 13px var(--ib-sans);color:#7a4b00}.my-event small{color:var(--muted)}
+.event-chip{display:block;width:100%;text-align:left;border:0;border-left:3px solid #c98a12;background:#fff3d6;color:#5a3b00;font:600 12px/1.25 var(--ib-sans);padding:3px 6px;margin:2px 0;border-radius:4px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.event-chip b{font-weight:800}
+.calendar-page .page-head{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.calendar-page .page-head [data-new-event]{margin-left:auto}
+@media (max-width:640px){.my-add input[type=date]{flex:1 1 140px}.my-add .btn{flex:1 1 100%}.wf-done{width:40px;height:40px}}
