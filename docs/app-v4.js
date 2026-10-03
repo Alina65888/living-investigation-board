@@ -1,11 +1,11 @@
-import {createWorkflow} from './task-workflow.js?v=29';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=29';
-import {createTeamUI} from './team-ui.js?v=29'
-import {authGate,openAccount} from './auth-ui.js?v=29'
-import {createDocumentsUI} from './documents.js?v=29';
-import {HQView} from './hq.js?v=29'
-import {LINKS} from './corkboard.js?v=29';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=29';
+import {createWorkflow} from './task-workflow.js?v=30';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=30';
+import {createTeamUI} from './team-ui.js?v=30'
+import {authGate,openAccount} from './auth-ui.js?v=30'
+import {createDocumentsUI} from './documents.js?v=30';
+import {HQView} from './hq.js?v=30'
+import {LINKS} from './corkboard.js?v=30';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=30';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На согласовании'],['done','Выполнена']];
@@ -88,7 +88,7 @@ let dirty=false,editGeneration=0;
 let lastWorkView='list',hqFocusId=null;
 let view='home',calendarMode='month',scope='all',currentProject='all',selectedTaskId=null,selectedProjectId=null,search='',hq=null,saveTimer=null,monthAnchor=new Date(),timelineStart=new Date();
 const initialHash=new URLSearchParams(location.hash.replace(/^#/,''));
-if(['home','board','list','kanban','calendar','people','hq','problems','integrations','notifications','archive','docs'].includes(initialHash.get('view')))view=initialHash.get('view');
+if(['home','board','list','kanban','calendar','people','hq','problems','integrations','notifications','archive','docs','mine'].includes(initialHash.get('view')))view=initialHash.get('view');
 if(isWorkView(view)&&view!=='board')lastWorkView=view;
 if(initialHash.get('project')&&state.projects.some(p=>p.id===initialHash.get('project')))currentProject=initialHash.get('project');
 if(initialHash.get('task')&&state.tasks.some(t=>t.id===initialHash.get('task')))selectedTaskId=initialHash.get('task');
@@ -154,7 +154,7 @@ function addRelation(a,b,type='blocks'){if(!isAdmin()){toast('Действие �
 const WORK_VIEWS=[['list','Список'],['kanban','Kanban'],['calendar','Календарь'],['board','Доска'],['hq','Связи']];
 function isWorkView(v){return['list','kanban','calendar','board','hq'].includes(v)}
 const SCOPES=[['all','Все'],['overdue','Просрочено'],['today','Сегодня'],['week','Неделя'],['blocked','Заблокировано'],['approval','Ждут решения'],['risks','Риски'],['critical','Критический путь']];
-function places(){return[['home',hosted?(isAdmin()?'Решения':'Мои задачи'):'Сегодня'],['work','Задачи'],['people','Команда'],['problems','Проблемы'],...(isAdmin()?[['docs','Документы']]:[]),...(hosted?[['notifications','Уведомления'],...(isAdmin()?[['archive','Архив']]:[])]:[])]}
+function places(){return[['home',hosted?(isAdmin()?'Решения':'Мои задачи'):'Сегодня'],...(hosted&&isAdmin()?[['mine','Мои задачи']]:[]),['work','Задачи'],['people','Команда'],['problems','Проблемы'],...(isAdmin()?[['docs','Документы']]:[]),...(hosted?[['notifications','Уведомления'],...(isAdmin()?[['archive','Архив']]:[])]:[])]}
 function placeTab([v,n]){return v==='work'?`<button class="tab ${isWorkView(view)?'active':''}" data-place="work">${n}</button>`:`<button class="tab ${view===v?'active':''}" data-view="${v}">${n}</button>`}
 function workBar(main){if(!isWorkView(view))return;const bar=document.createElement('div');bar.className='work-bar';bar.innerHTML=`<div class="work-views" role="tablist" aria-label="Как показать задачи">${WORK_VIEWS.map(([v,n])=>`<button role="tab" aria-selected="${view===v}" class="${view===v?'active':''}" data-view="${v}">${n}</button>`).join('')}</div><div class="work-scopes" aria-label="Срез">${SCOPES.map(([v,n])=>`<button class="${scope===v?'active':''}" data-scope="${v}">${n}</button>`).join('')}</div>`;main.prepend(bar);main.classList.add('has-workbar');bar.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));bar.querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>{scope=b.dataset.scope;renderSidebar();renderMain();updateUrl()})}
 function shell(){
@@ -181,7 +181,7 @@ function bindKpis(main){main.querySelectorAll('[data-kpi]').forEach(x=>x.onclick
 function pageTitle(){if(currentProject==='inbox')return'Входящие';if(currentProject!=='all')return projectBy(currentProject)?.name||'Проект';if(scope==='today')return'Срок сегодня';if(scope==='overdue')return'Просрочено';if(scope==='blocked')return'Заблокировано';if(scope==='week')return'Неделя';if(scope==='risks')return'Риски';if(scope==='approval')return'Ждут решения';if(scope==='critical')return'Критический путь';return'Все проекты'}
 function contextName(){if(currentProject==='inbox')return'Входящие';if(currentProject!=='all')return projectBy(currentProject)?.name||'Проект';return'Все проекты'}
 function contextBar(main){if(view==='board')return;const names={today:'Срок сегодня',overdue:'Просрочено',blocked:'Заблокировано',week:'Ближайшие 7 дней',risks:'Риски',approval:'Ждут решения',critical:'Критический путь'};const active=currentProject!=='all'||(scope!=='all'&&!isWorkView(view))||!!search;if(!active)return;const bar=document.createElement('div');bar.className='context-bar';bar.innerHTML=`<span>Показано:</span><b>${esc(contextName())}</b>${scope!=='all'?`<b>${esc(names[scope]||scope)}</b>`:''}${search?`<b>Поиск: ${esc(search)}</b>`:''}<button class="btn mini" data-reset-context>Сбросить</button>`;main.prepend(bar);bar.querySelector('[data-reset-context]').onclick=()=>{currentProject='all';scope='all';search='';selectedTaskId=null;selectedProjectId=null;document.querySelector('#search').value='';renderAll(false);updateUrl()}}
-function renderMain(){const main=document.querySelector('#main');if(!main)return;main.classList.remove('has-workbar');if(hq){hqSaved={key:hqKey(),view:hq.view};hq.destroy();hq=null}if(view==='board'){main.innerHTML='<div class="loading-state">Открываю доску…</div>';window.dispatchEvent(new CustomEvent('living-hq:open-board'));return}const items=filteredTasks();if(view==='home'&&hosted)workflow.home(main);else if(view==='notifications'&&hosted)workflow.notifications(main);else if(view==='archive'&&hosted)workflow.archive(main);else if(view==='home')renderHome(main,items);else if(view==='list')renderList(main,items);else if(view==='kanban')renderKanban(main,items);else if(view==='calendar')renderCalendar(main,items);else if(view==='people')renderPeople(main,items);else if(view==='problems')teamUI.problems(main);else if(view==='docs'&&isAdmin())documentsUI.render(main);else if(view==='integrations')teamUI.integrations(main);else renderHQ(main,items);workBar(main);contextBar(main)}
+function renderMain(){const main=document.querySelector('#main');if(!main)return;main.classList.remove('has-workbar');if(hq){hqSaved={key:hqKey(),view:hq.view};hq.destroy();hq=null}if(view==='board'){main.innerHTML='<div class="loading-state">Открываю доску…</div>';window.dispatchEvent(new CustomEvent('living-hq:open-board'));return}const items=filteredTasks();if(view==='home'&&hosted)workflow.home(main);else if(view==='mine'&&hosted)workflow.mine(main);else if(view==='notifications'&&hosted)workflow.notifications(main);else if(view==='archive'&&hosted)workflow.archive(main);else if(view==='home')renderHome(main,items);else if(view==='list')renderList(main,items);else if(view==='kanban')renderKanban(main,items);else if(view==='calendar')renderCalendar(main,items);else if(view==='people')renderPeople(main,items);else if(view==='problems')teamUI.problems(main);else if(view==='docs'&&isAdmin())documentsUI.render(main);else if(view==='integrations')teamUI.integrations(main);else renderHQ(main,items);workBar(main);contextBar(main)}
 function taskStatusChip(t){const st=effectiveStatus(t),auto=st==='blocked'&&t.status!=='blocked';return`<span class="status-chip status-${st}">${statusName(st)}${auto?' · авто':''}</span>`}
 function nextAction(p){const tasks=projectTasks(p.id).filter(t=>effectiveStatus(t)!=='done').sort((a,b)=>{const ar=isRisk(a)?0:1,br=isRisk(b)?0:1;return ar-br||(a.dueDate||'9999').localeCompare(b.dueDate||'9999')});return tasks[0]}
 // Each open task that needs someone becomes one sentence with the button that resolves it.
