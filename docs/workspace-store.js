@@ -2,7 +2,16 @@
 // Address of the deployed team server; leave empty until it is published (the "team mode" links stay hidden).
 export const TEAM_URL='https://zadachimantckd.ru';
 // Team mode = this page is served by the team server (PHP hosting). GitHub Pages and plain static hosting answer 404 on /api/me.
-async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;try{const r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'});if(r.status===404)return null;const x=await r.json();return x&&x.team===true?x:null}catch{return null}}
+// On the team domain itself never fall back to the personal board: explain what is wrong instead, so the login screen is not silently skipped.
+const teamHost=TEAM_URL?new URL(TEAM_URL).hostname:'';
+const onTeamHost=!!teamHost&&location.hostname.replace(/^www\./,'')===teamHost;
+const broken=why=>onTeamHost?{team:true,serverError:why}:null;
+async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;let r;try{r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'})}catch{return broken('Не удалось связаться с сервером сайта. Проверьте интернет и обновите страницу.')}
+  if(r.status===404)return broken('Сервер не нашёл адрес /api/me. Похоже, на хостинг не попали папка api или файл .htaccess. Запустите в GitHub выкладку Deploy to hosting с галочкой «Загрузить все файлы заново».');
+  let x=null;try{x=await r.json()}catch{}
+  if(x&&x.team===true)return x;
+  if(x&&x.error)return broken(`Сервер ответил ошибкой (код ${r.status}): ${x.error}`);
+  return broken(`Сервер вернул не то, что ожидалось (код ${r.status}). Проверьте в панели хостинга, что для сайта выбран PHP 8.1 или новее и что в папке сайта нет заглушки index.php от хостинга.`)}
 export const auth=await detectTeam();
 export const hosted=!!auth;
 export const session={me:null,team:[],revision:0};
