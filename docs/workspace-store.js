@@ -6,18 +6,26 @@ export const TEAM_URL='https://zadachimantckd.ru';
 const teamHost=TEAM_URL?new URL(TEAM_URL).hostname:'';
 const onTeamHost=!!teamHost&&location.hostname.replace(/^www\./,'')===teamHost;
 const broken=why=>onTeamHost?{team:true,serverError:why}:null;
-async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;let r;try{r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'})}catch{return broken('Не удалось связаться с сервером сайта. Проверьте интернет и обновите страницу.')}
-  if(r.status===404)return broken('Сервер не нашёл адрес /api/me. Похоже, на хостинг не попали папка api или файл .htaccess. Запустите в GitHub выкладку Deploy to hosting с галочкой «Загрузить все файлы заново».');
-  let x=null;try{x=await r.json()}catch{}
-  if(x&&x.team===true)return x;
-  if(x&&x.error)return broken(`Сервер ответил ошибкой (код ${r.status}): ${x.error}`);
-  return broken(`Сервер вернул не то, что ожидалось (код ${r.status}). Проверьте в панели хостинга, что для сайта выбран PHP 8.1 или новее и что в папке сайта нет заглушки index.php от хостинга.`)}
+// Hosting where the /api/* rewrite does not work (403/404) still reaches PHP directly as /api/index.php/<route>.
+let apiBase='/api/';
+export const apiUrl=p=>p.startsWith('/api/')?apiBase+p.slice(5):p;
+async function probe(url){try{const r=await fetch(url,{cache:'no-store',credentials:'same-origin'});let x=null;try{x=await r.json()}catch{}return {status:r.status,x}}catch{return null}}
+async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;
+  const main=await probe('/api/me');if(!main)return broken('Не удалось связаться с сервером сайта. Проверьте интернет и обновите страницу.');
+  if(main.x?.team===true)return main.x;
+  if(main.x?.error)return broken(`Сервер ответил ошибкой (код ${main.status}): ${main.x.error}`);
+  if(!onTeamHost&&main.status===404)return null;
+  const direct=await probe('/api/index.php/me');
+  if(direct?.x?.team===true){apiBase='/api/index.php/';return direct.x}
+  if(direct?.x?.error)return broken(`Сервер ответил ошибкой (код ${direct.status}): ${direct.x.error}`);
+  if(main.status===404&&direct?.status===404)return broken('На хостинге нет папки api. Запустите в GitHub выкладку Deploy to hosting с галочкой «Загрузить все файлы заново».');
+  return broken(`Хостинг не пускает к серверной части сайта (код ${main.status}, напрямую — ${direct?.status??'нет ответа'}). Проверьте в панели хостинга, что для сайта выбран PHP 8.1 или новее, а у папки api и её файлов права 755 и 644.`)}
 export const auth=await detectTeam();
 export const hosted=!!auth;
 export const session={me:null,team:[],revision:0};
 let database,queue=Promise.resolve(),pending=0,conflict=false;
 function localDb(){return database||(database=new Promise((resolve,reject)=>{const r=indexedDB.open('living-project-hq',1);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('workspace'))r.result.createObjectStore('workspace')};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)}))}
-export async function api(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'});let result;try{result=await r.json()}catch{throw new Error('Не удалось подключиться. Обновите страницу и войдите в аккаунт.')}if(!r.ok){const e=new Error(result.error||'Не удалось выполнить действие');e.status=r.status;if(r.status===401&&hosted&&!path.startsWith('/api/login')&&!path.startsWith('/api/setup'))setTimeout(()=>location.reload(),1200);throw e}return result}
+export async function api(path,body){const r=await fetch(apiUrl(path),{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'});let result;try{result=await r.json()}catch{throw new Error('Не удалось подключиться. Обновите страницу и войдите в аккаунт.')}if(!r.ok){const e=new Error(result.error||'Не удалось выполнить действие');e.status=r.status;if(r.status===401&&hosted&&!path.startsWith('/api/login')&&!path.startsWith('/api/setup'))setTimeout(()=>location.reload(),1200);throw e}return result}
 export async function loadWorkspace(){if(hosted){const x=await api('/api/workspace');Object.assign(session,{me:x.me,team:x.team,revision:x.revision});return x.data}const d=await localDb();return new Promise((res,rej)=>{const r=d.transaction('workspace','readonly').objectStore('workspace').get('main');r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
 export function isAdmin(){return !hosted||session.me?.role==='admin'}
 export function canEditTask(t){return isAdmin()||t.assigneeEmail===session.me?.email||t.assigneeEmails?.includes(session.me?.email)||t.createdBy===session.me?.email}
