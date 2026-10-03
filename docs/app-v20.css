@@ -309,7 +309,7 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 .my-add input[name=title]{flex:1 1 260px;min-width:0;font:600 16px/1.3 var(--ib-sans);padding:12px 14px;border:1.5px solid var(--line2);border-radius:10px;background:var(--panel)}
 .my-add input[type=date]{flex:0 1 170px;padding:11px 12px;border:1.5px solid var(--line2);border-radius:10px;background:var(--panel);font:600 14px var(--ib-sans)}
 .my-group h2{display:flex;align-items:center;gap:8px;font-size:18px;margin:0 0 8px}
-.my-group.overdue h2{color:#b42318}
+.my-group.is-late h2{color:#b42318}
 .my-done summary{cursor:pointer;font:700 15px var(--ib-sans);color:var(--muted)}
 .my-event{gap:14px}.my-event b{font:700 15px/1.3 var(--ib-sans)}.my-event .ev-date{flex:none;min-width:96px;font:700 13px var(--ib-sans);color:#7a4b00}.my-event small{color:var(--muted)}
 .event-chip{display:block;width:100%;text-align:left;border:0;border-left:3px solid #c98a12;background:#fff3d6;color:#5a3b00;font:600 12px/1.25 var(--ib-sans);padding:3px 6px;margin:2px 0;border-radius:4px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -317,3 +317,26 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 .calendar-page .page-head{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start}
 .calendar-page .page-head [data-new-event]{margin-left:auto}
 @media (max-width:640px){.my-add input[type=date]{flex:1 1 140px}.my-add .btn{flex:1 1 100%}.wf-done{width:40px;height:40px}}
+/* Long dialogs (task settings) scroll inside the window */
+.modal{max-height:calc(100dvh - 36px)!important;overflow-y:auto!important;overscroll-behavior:contain;margin-bottom:0!important}
+.modal-backdrop{align-items:center!important}
+/* Executor's list: every task in full */
+.my-task{display:flex;gap:14px;align-items:flex-start;padding:16px 0;border-bottom:1px solid var(--line)}
+.my-task:last-child{border-bottom:0}
+.my-task .wf-done{margin-top:2px;align-self:flex-start}
+.my-task.is-done .my-title{text-decoration:line-through;color:var(--muted)}
+.my-body{flex:1;min-width:0}
+.my-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.my-title{font:700 16.5px/1.3 var(--ib-sans);color:var(--text)}
+.my-flag{font:800 11px/1 var(--ib-sans);text-transform:uppercase;letter-spacing:.04em;color:#b42318;border:1.5px solid #b42318;border-radius:5px;padding:3px 6px}
+.my-meta{display:flex;gap:6px 14px;flex-wrap:wrap;margin-top:4px;font:600 13px/1.3 var(--ib-sans);color:var(--muted)}
+.my-meta .overdue{color:#b42318}
+.my-desc{margin:8px 0 0;font-size:14.5px;line-height:1.5;color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere}
+.my-desc small{font-weight:700;color:var(--muted);font-size:13px}
+.my-check{display:grid;gap:6px;margin-top:10px}
+.my-check label{display:flex;gap:8px;align-items:flex-start;font-size:14.5px;line-height:1.4;cursor:pointer}
+.my-check input{width:18px!important;height:18px;flex:none;margin-top:1px}
+.my-check input:checked+span{text-decoration:line-through;color:var(--muted)}
+.my-return{margin:8px 0 0;padding:8px 10px;border-radius:8px;background:#fdecea;color:#7a1a12;font-size:14px}
+.my-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.my-actions .btn{padding:8px 12px!important;font-size:13.5px!important}
