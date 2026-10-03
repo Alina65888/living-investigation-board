@@ -1,6 +1,6 @@
 // Contracts, invoices, acts and UPD from one set of party cards and a deal.
 // Pure functions (no DOM): grammar for Russian legal preambles, amounts in words, requisites checks,
-// and minimal OOXML writers (DOCX from scratch, UPD by filling docs/templates/upd.xlsx).
+// and template filling that preserves the approved Office packages.
 
 // ---------- small helpers ----------
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -10,7 +10,7 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const digits = s => String(s ?? '').replace(/\D/g, '');
 export const money = n => (Math.round((+n || 0) * 100) / 100).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 export const qty = n => String(+n || 0).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-export const sumItems = items => Math.round(items.reduce((s, i) => s + (+i.qty || 0) * (+i.price || 0), 0) * 100) / 100;
+export const sumItems = items => items.reduce((s, i) => s + Math.round((+i.qty || 0) * (+i.price || 0) * 100), 0) / 100;
 
 // ---------- numbers in words ----------
 const ONES = { m: ['', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'], f: ['', 'одна', 'две', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'] };
@@ -200,7 +200,7 @@ export function unzipStored(buf) {
   let p = 0;
   while (p + 30 <= u.length && v.getUint32(p, true) === 0x04034b50) {
     const method = v.getUint16(p + 8, true), size = v.getUint32(p + 18, true), nl = v.getUint16(p + 26, true), xl = v.getUint16(p + 28, true);
-    if (method !== 0) throw new Error('Шаблон УПД должен быть сохранён без сжатия');
+    if (method !== 0) throw new Error('Шаблон Office должен быть сохранён без сжатия');
     const name = dec.decode(u.subarray(p + 30, p + 30 + nl));
     out[name] = u.slice(p + 30 + nl + xl, p + 30 + nl + xl + size);
     p += 30 + nl + xl + size;
@@ -208,247 +208,12 @@ export function unzipStored(buf) {
   return out;
 }
 
-// ---------- OOXML: docx ----------
-// Layout copied from the sample documents (Google Docs export): A4, margins 1.25/1.25/1.25/1.5 cm, Times New Roman 12,
-// single spacing, cell margins 100 twips, the same column widths, borders and signature blocks.
+// Word output uses the original, anonymized Office packages.
+export { contractDocx, invoiceDocx, actDocx, templateName } from './docx-templates.js?v=31';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const FONT = '<w:rFonts w:ascii="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman"/>';
-// run(text, {b, size}) — size in points (default 12); text may contain \n for line breaks
-const run = (text, o = {}) => `<w:r><w:rPr>${FONT}${o.b ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="${(o.size || 12) * 2}"/><w:szCs w:val="${(o.size || 12) * 2}"/></w:rPr>${String(text ?? '').split('\n').map((t, i) => `${i ? '<w:br/>' : ''}${t ? `<w:t xml:space="preserve">${x(t)}</w:t>` : ''}`).join('')}</w:r>`;
-// p(content, {align, before, after, line, first, left, hanging, num, keep}) — content: string or array of [text, opts]
-function p(content, o = {}) {
-  const runs = Array.isArray(content) ? content.map(c => Array.isArray(c) ? run(c[0], c[1]) : run(c)).join('') : run(content, o.r);
-  const ind = o.first || o.left || o.hanging || o.num ? `<w:ind${o.left || o.num ? ` w:left="${o.left || 0}"` : ''}${o.hanging ? ` w:hanging="${o.hanging}"` : ''}${o.first ? ` w:firstLine="${o.first}"` : ''}/>` : '';
-  const ppr = `<w:pPr>${o.keep ? '<w:keepNext/>' : ''}${o.num ? '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' : ''}<w:spacing w:before="${o.before ?? 0}" w:after="${o.after ?? 0}" w:line="${o.line ?? 240}" w:lineRule="auto"/>${ind}<w:jc w:val="${o.align || 'left'}"/></w:pPr>`;
-  return `<w:p>${ppr}${runs}</w:p>`;
-}
-const empty = (o = {}) => p('', o);
-const pageBreak = () => '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
-// Grey horizontal rule, as in the invoice sample.
-const rule = () => '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="276" w:lineRule="auto"/></w:pPr><w:r><w:pict><v:rect style="width:0pt;height:1.5pt" o:hr="t" o:hrstd="t" o:hralign="center" fillcolor="#A0A0A0" stroked="f"/></w:pict></w:r></w:p>';
-const edge = (sides, sz) => sides.map(s => sz ? `<w:${s} w:val="single" w:sz="${sz}" w:space="0" w:color="000000"/>` : `<w:${s} w:val="nil"/>`).join('');
-const SIDES = ['top', 'left', 'bottom', 'right'];
-// table(rows, {widths, grid, ind, jc}) — row: array of cells or {cells, h}; cell: string | {t, b, align, span, vmerge, valign, paras, runs, size, borders}
-// grid: table borders in eighths of a point (0 = none). cell.borders: {top,left,bottom,right} sizes (0 = none), 'none' or omitted (inherit).
-function table(rows, o = {}) {
-  const total = o.widths.reduce((a, b) => a + b, 0), g = o.grid ?? 8;
-  const borders = `<w:tblBorders>${edge([...SIDES, 'insideH', 'insideV'], g)}</w:tblBorders>`;
-  const trs = rows.map(r0 => {
-    const r = Array.isArray(r0) ? { cells: r0 } : r0;
-    let col = 0;
-    return `<w:tr><w:trPr><w:cantSplit/>${r.h ? `<w:trHeight w:val="${r.h}" w:hRule="atLeast"/>` : ''}</w:trPr>${r.cells.map(c => {
-      const cell = typeof c === 'object' && c !== null && !Array.isArray(c) ? c : { t: c }, span = cell.span || 1;
-      const w = o.widths.slice(col, col + span).reduce((a, b) => a + b, 0); col += span;
-      const bd = cell.borders === 'none' ? `<w:tcBorders>${edge(SIDES, 0)}</w:tcBorders>` : cell.borders ? `<w:tcBorders>${SIDES.filter(s => s in cell.borders).map(s => edge([s], cell.borders[s])).join('')}</w:tcBorders>` : '';
-      const body = cell.paras || [p(cell.runs || [[cell.t ?? '', { b: cell.b, size: cell.size }]], { align: cell.align || 'left', line: cell.line })];
-      return `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${span > 1 ? `<w:gridSpan w:val="${span}"/>` : ''}${cell.vmerge ? `<w:vMerge${cell.vmerge === 'restart' ? ' w:val="restart"' : ''}/>` : ''}${bd}<w:vAlign w:val="${cell.valign || 'top'}"/></w:tcPr>${body.join('')}</w:tc>`;
-    }).join('')}</w:tr>`;
-  }).join('');
-  return `<w:tbl><w:tblPr><w:tblW w:w="${total}" w:type="dxa"/><w:jc w:val="${o.jc || 'left'}"/>${o.ind ? `<w:tblInd w:w="${o.ind}" w:type="dxa"/>` : ''}${borders}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="100" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0600"/></w:tblPr><w:tblGrid>${o.widths.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${trs}</w:tbl>`;
-}
-const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"';
-const NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering ${NS}><w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="1"/></w:num></w:numbering>`;
-// docx(body, {title, firstHeader}) — firstHeader: XML of a header shown on the first page only (invoice bank block)
-function docx(bodyXml, { title = 'Документ', firstHeader = '', header = 708 } = {}) {
-  const ct = 'application/vnd.openxmlformats-officedocument.wordprocessingml';
-  const files = {
-    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="${ct}.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="${ct}.styles+xml"/><Override PartName="/word/settings.xml" ContentType="${ct}.settings+xml"/><Override PartName="/word/numbering.xml" ContentType="${ct}.numbering+xml"/>${firstHeader ? `<Override PartName="/word/header1.xml" ContentType="${ct}.header+xml"/><Override PartName="/word/header2.xml" ContentType="${ct}.header+xml"/>` : ''}<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`,
-    '_rels/.rels': '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>',
-    'docProps/core.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${x(title)}</dc:title><dc:creator>Living Project HQ</dc:creator></cp:coreProperties>`,
-    'word/_rels/document.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>${firstHeader ? '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>' : ''}</Relationships>`,
-    'word/styles.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${NS}><w:docDefaults><w:rPrDefault><w:rPr>${FONT}<w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:widowControl w:val="0"/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr><w:tblCellMar><w:top w:w="100" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="100" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style></w:styles>`,
-    'word/settings.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings ${NS}><w:defaultTabStop w:val="720"/><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>`,
-    'word/numbering.xml': NUMBERING,
-    'word/document.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${bodyXml}<w:sectPr>${firstHeader ? '<w:headerReference w:type="default" r:id="rId4"/><w:headerReference w:type="first" r:id="rId5"/>' : ''}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="709" w:right="709" w:bottom="850" w:left="709" w:header="${header}" w:footer="708" w:gutter="0"/>${firstHeader ? '<w:titlePg/>' : ''}</w:sectPr></w:body></w:document>`
-  };
-  if (firstHeader) {
-    files['word/header1.xml'] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}>${empty()}</w:hdr>`;
-    files['word/header2.xml'] = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:hdr ${NS}>${firstHeader}</w:hdr>`;
-  }
-  return zip(files);
-}
-
-// ---------- shared blocks ----------
-function requisites(p) {
-  const rows = [];
-  if (p.kind === 'org') rows.push(['ОГРН', p.ogrn], ['Адрес', p.address], ['ИНН / КПП', `${digits(p.inn)} / ${digits(p.kpp)}`]);
-  if (p.kind === 'ip') rows.push(['ОГРНИП', p.ogrn], ['Адрес', p.address], ['ИНН', digits(p.inn)]);
-  if (p.kind === 'npd' || p.kind === 'person') rows.push(['Паспорт', p.passport], ['Адрес', p.address], ['ИНН', digits(p.inn)]);
-  rows.push(['Р/с', p.account], ['Банк', p.bank], ['К/с', p.corr], ['БИК', p.bik]);
-  if (p.email) rows.push(['E-mail', p.email]);
-  if (p.phone) rows.push(['Телефон', p.phone]);
-  return rows;
-}
-function signerLine(p) {
-  if (p.kind === 'org') return { pos: cap(p.signerPosition || 'Директор'), name: initials(p.signer), stamp: true };
-  if (p.kind === 'ip') return { pos: 'Индивидуальный предприниматель', name: initials(p.fio), stamp: true };
-  return { pos: p.fio, name: initials(p.fio), stamp: false };
-}
-// Two-column signature block without borders: position, two blank lines, line with initials, «М. П.» for organisations.
-function signatures(left, right) {
-  const cell = s => ({ borders: 'none', paras: [p([[s.pos, { b: true }]]), p('\n'), p(`_____________________ / ${s.name}`), ...(s.stamp ? [p('М. П.')] : [])] });
-  return table([{ h: 1905, cells: [cell(signerLine(left)), cell(signerLine(right))] }], { widths: [5637, 5118], ind: -80 });
-}
-// Requisites of both sides: labels centred, values left, no borders.
-function partiesTable(cust, exec, t, { colon = false, merged = false } = {}) {
-  const L = requisites(cust), R = requisites(exec), n = Math.max(L.length, R.length);
-  const head = (role, party) => merged
-    ? { span: 2, valign: 'center', paras: [p([[`${role}:`, { b: true }]], { align: 'center' }), p([[partyTitle(party), { b: true }]], { align: 'center' })] }
-    : { span: 2, valign: 'center', t: `${role}${colon ? ':' : ''}`, b: true, align: 'center' };
-  const rows = [{ h: 186, cells: [head(t.cust, cust), head(t.exec, exec)] }];
-  if (!merged) rows.push([{ span: 2, valign: 'center', t: partyTitle(cust), b: true, align: 'center' }, { span: 2, valign: 'center', t: partyTitle(exec), b: true, align: 'center' }]);
-  const lab = s => ({ t: s || '', align: 'center', valign: 'center' }), val = s => ({ t: s || '', valign: 'center', borders: 'none' });
-  for (let i = 0; i < n; i++) rows.push([lab(L[i]?.[0]), val(L[i]?.[1]), lab(R[i]?.[0]), val(R[i]?.[1])]);
-  return table(rows, { widths: [1560, 3720, 1410, 3915], grid: 0, ind: -100 });
-}
-// Specification (appendix 1 of the contract): all cells with thin borders, centred, a group row with the deal type.
-function specTable(deal, exec, t) {
-  const total = sumItems(deal.items), all = { top: 4, left: 4, bottom: 4, right: 4 };
-  const c = (v, o = {}) => ({ t: v, align: 'center', valign: 'center', borders: all, ...o });
-  const rows = [{ h: 493, cells: ['№', 'Наименование', 'Описание', 'Ед. изм.', 'Кол-во', 'Цена за ед. (руб.)', 'Сумма (руб.)'].map(s => c(s, { b: true })) }];
-  rows.push({ h: 414, cells: [c('1', { b: true }), c(t.obj, { b: true, span: 6 })] });
-  deal.items.forEach((it, i) => rows.push({ h: 462, cells: [c(`1.${i + 1}`), c(it.name), c(it.description || ''), c(it.unit || ''), c(qty(it.qty)), c(money(it.price)), c(money(it.qty * it.price))] }));
-  rows.push({ h: 462, cells: [c(''), c('ИТОГО:', { b: true, span: 5, align: 'right' }), c(money(total), { b: true })] });
-  if (vatPayer(exec)) rows.push({ h: 462, cells: [c(''), c(`В том числе НДС ${vatRate(exec)}%:`, { b: true, span: 5, align: 'right' }), c(money(vatAmount(total, exec)), { b: true })] });
-  return table(rows, { widths: [570, 2160, 3675, 915, 960, 1185, 1365], jc: 'center' });
-}
-const placeDate = (city, date, o = {}) => {
-  const place = /^(г\.|с\.|пос\.|п\.|д\.)\s/.test(city || '') ? city : `г. ${city || 'Казань'}`;
-  return table([[{ t: place, b: true, borders: 'none', align: o.act ? 'left' : 'both' }, { t: longDate(date), b: true, borders: 'none', align: 'right' }]], o.act ? { widths: [4665, 5910], grid: 0, ind: -100 } : { widths: [5370, 5325], jc: 'center' });
-};
-const h = text => p([[text, { b: true }]], { align: 'center', keep: true });
-const cl = (num, text) => p(`${num} ${text}`, { align: 'both', first: 425 });
-const clh = (num, text) => p([[`${num} ${text}`, { b: true }]], { align: 'both', first: 425, keep: true });
-const yearWord = s => s.replace(/ г\.$/, ' года');
-const contractRef = (deal, t) => `Договору ${t.title} № ${deal.number} от ${yearWord(longDate(deal.date))}`;
-// «Гражданин Иванов Иван Иванович, зарегистрированный…» — the party name in bold, the rest regular.
-function preamble(party, role, tail, o) {
-  const text = `${partyPreamble(party, role)}, ${tail}`, name = party.kind === 'org' ? party.name : party.kind === 'ip' ? null : null;
-  const lead = name || (party.kind === 'ip' || party.kind === 'npd' || party.kind === 'person' ? text.match(/^(?:Гражданин|Гражданка|Индивидуальный предприниматель)\s+\S+\s+\S+(?:\s+\S+)?(?=,)/)?.[0] : null);
-  const runs = lead && text.startsWith(lead) ? [[lead, { b: true }], [text.slice(lead.length)]] : [[text]];
-  return p(runs, { align: 'both', first: 425, ...o });
-}
-
-// ---------- contract ----------
-export function contractDocx(deal, cust, exec) {
-  const t = DEAL_TYPES[deal.type], total = sumItems(deal.items), npd = exec.kind === 'npd', days = deal.payDays || 15;
-  const B = [], gap = () => p('', { align: 'both' });
-  B.push(p([['ДОГОВОР', { b: true }]], { align: 'center' }), p([[`${t.title} № ${deal.number}`, { b: true }]], { align: 'center', after: 200 }));
-  B.push(placeDate(deal.city, deal.date));
-  B.push(preamble(exec, t.exec, 'с одной стороны, и', { before: 100, after: 100 }));
-  B.push(preamble(cust, t.cust, 'с другой стороны,', { after: 160 }));
-  B.push(p('совместно именуемые «Стороны», заключили настоящий договор, в дальнейшем «Договор», о нижеследующем:', { align: 'both', first: 709 }), gap());
-  B.push(h('1. ПРЕДМЕТ ДОГОВОРА'));
-  const period = deal.period ? ` ${deal.period}` : '';
-  if (deal.type === 'supply') B.push(cl('1.1.', `${t.exec} обязуется поставить в течение срока действия Договора Товары согласно Спецификации (Приложение № 1 к настоящему Договору): ${deal.subject}${period}, а ${t.cust} в случае отсутствия мотивированных возражений обязуется принять и оплатить Товары.`));
-  else if (deal.type === 'works') B.push(cl('1.1.', `${t.exec} обязуется по заданию Заказчика выполнить Работы согласно Спецификации (Приложение № 1 к настоящему Договору): ${deal.subject}${period}, и сдать их результат Заказчику, а Заказчик обязуется принять результат Работ и оплатить его.`));
-  else B.push(cl('1.1.', `${t.exec} обязуется по заданию Заказчика оказать Услуги согласно Спецификации (Приложение № 1 к настоящему Договору): ${deal.subject}${period}, а Заказчик в случае отсутствия мотивированных возражений обязуется принять и оплатить Услуги.`));
-  B.push(gap(), h('2. ПРАВА И ОБЯЗАННОСТИ СТОРОН'));
-  B.push(cl('2.1.', 'При исполнении Договора Стороны обязуются принимать во внимание предлагаемые друг другу рекомендации, указанные в Спецификации и касающиеся предмета Договора.'));
-  B.push(clh('2.2.', `${t.exec} обязуется:`));
-  B.push(cl('2.2.1.', `надлежащим образом ${t.verb} ${t.objAcc} надлежащего качества, перечисленные в п. 1.1 Договора и в Спецификации, являющейся неотъемлемой частью Договора;`));
-  if (deal.type === 'works') B.push(cl('2.2.2.', 'передать Заказчику результат Работ по Акту сдачи-приемки выполненных работ и устранить за свой счет недостатки, выявленные при приемке;'));
-  if (npd) B.push(cl(deal.type === 'works' ? '2.2.3.' : '2.2.2.', 'в течение 3 (Трех) рабочих дней после получения оплаты передать Заказчику чек, сформированный в приложении «Мой налог», и незамедлительно письменно уведомить Заказчика о снятии с учета в качестве налогоплательщика налога на профессиональный доход.'));
-  B.push(clh('2.3.', `${t.exec} имеет право:`));
-  B.push(cl('2.3.1.', `требовать и получать от ${t.custGen} все необходимые для исполнения Договора сведения.`));
-  B.push(clh('2.4.', `${t.cust} обязуется:`));
-  B.push(cl('2.4.1.', 'своевременно производить оплату в соответствии с условиями Договора.'));
-  B.push(clh('2.5.', `${t.cust} имеет право:`));
-  B.push(cl('2.5.1.', deal.type === 'supply' ? `во всякое время проверять качество Товаров, поставляемых ${t.execGen === 'Поставщика' ? 'Поставщиком' : t.exec}, не вмешиваясь в его деятельность.` : deal.type === 'works' ? 'во всякое время проверять ход и качество выполняемых Работ, не вмешиваясь в деятельность Подрядчика.' : 'во всякое время проверять качество оказываемых Услуг, не вмешиваясь в деятельность Исполнителя.'));
-  B.push(gap(), h('3. СТОИМОСТЬ И ПОРЯДОК ОПЛАТЫ'));
-  B.push(p([['3.1. Стоимость по Договору составляет: '], [amountWithWords(total), { b: true }], [` ${vatLine(total, exec)} Стоимость согласована Сторонами в Спецификации, являющейся неотъемлемой частью Договора.`]], { align: 'both', first: 425 }));
-  B.push(cl('3.2.', `${t.cust} оплачивает стоимость по Договору путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% в течение ${days} (${cap(numberWords(days))}) рабочих дней с момента подписания ${npd || deal.type !== 'supply' ? (deal.type === 'works' ? 'Акта сдачи-приемки выполненных работ' : 'Акта об исполнении обязательств') : 'универсального передаточного документа (УПД) или товарной накладной'}.`));
-  B.push(cl('3.3.', `Договор считается оплаченным с даты списания денежных средств, предусмотренных п. 3.1 Договора, с расчетного счета ${t.custGen}.`));
-  B.push(cl('3.4.', 'На сумму предоплаты или аванса проценты по денежным обязательствам согласно ст. 317.1 ГК РФ не начисляются и не оплачиваются.'));
-  B.push(cl('3.5.', `В случае несвоевременного исполнения ${t.custGen === 'Покупателя' ? 'Покупателем' : 'Заказчиком'} обязательств по оплате ${t.exec} вправе взыскать проценты за пользование чужими денежными средствами в соответствии со ст. 395 ГК РФ.`));
-  B.push(gap(), h('4. ОТВЕТСТВЕННОСТЬ СТОРОН'));
-  B.push(cl('4.1.', 'В случае неисполнения либо ненадлежащего исполнения принятых на себя обязательств по Договору Сторона, допустившая указанные нарушения, несет ответственность в соответствии с законодательством Российской Федерации.'));
-  B.push(cl('4.2.', 'Ни одна из Сторон не несет ответственности за невыполнение каких-либо своих обязательств по Договору, если такое невыполнение вызвано или возникает в результате форс-мажорных обстоятельств.'));
-  B.push(cl('4.3.', 'При наступлении форс-мажорных обстоятельств срок исполнения обязательств по Договору изменяется соразмерно времени, в течение которого действовали такие обстоятельства.'));
-  if (deal.type === 'works') B.push(cl('4.4.', 'Подрядчик отвечает за недостатки результата Работ, обнаруженные в течение 6 (Шести) месяцев с даты подписания Акта сдачи-приемки выполненных работ, и обязан устранить их своими силами и за свой счет в разумный срок.'));
-  B.push(gap(), h('5. СРОК ДЕЙСТВИЯ ДОГОВОРА'));
-  B.push(cl('5.1.', `Договор вступает в силу с момента его подписания Сторонами и действует до полного исполнения Сторонами принятых на себя обязательств.${deal.deadline ? ` ${t.term} — не позднее ${longDate(deal.deadline)}` : ''}`));
-  B.push(cl('5.2.', 'Договор может быть расторгнут по взаимному соглашению Сторон либо по решению одной из Сторон, но не ранее проведения полного взаимного расчета с предъявлением подтверждающих документов. Сторона, намеренная расторгнуть Договор, обязана предупредить другую Сторону об этом за 15 (Пятнадцать) календарных дней до момента расторжения Договора.'));
-  B.push(gap(), h('6. ДОПОЛНИТЕЛЬНЫЕ УСЛОВИЯ'));
-  B.push(cl('6.1.', 'Все изменения и дополнения к Договору действительны лишь в том случае, если они оформлены в письменном виде и подписаны Сторонами.'));
-  B.push(cl('6.2.', 'В случае изменения своего адреса, счета или обслуживающего банка Стороны обязаны в 5-дневный срок уведомить об этом друг друга.'));
-  B.push(cl('6.3.', 'Разногласия по Договору разрешаются путем переговоров, а при невозможности — в суде в порядке, установленном законодательством Российской Федерации.'));
-  B.push(cl('6.4.', 'Договор составлен в двух экземплярах, имеющих одинаковую юридическую силу, по одному экземпляру для каждой из Сторон.'));
-  B.push(gap(), h('7. РЕКВИЗИТЫ И ПОДПИСИ СТОРОН'));
-  B.push(partiesTable(cust, exec, t), empty(), signatures(cust, exec));
-  // Appendix 1 — specification
-  B.push(pageBreak());
-  B.push(p('Приложение № 1', { left: 7087 }), p(`к Договору ${t.title}`, { left: 7087 }), p(`№ ${deal.number} от ${yearWord(longDate(deal.date))}`, { left: 7087, after: 200 }));
-  B.push(p([['СПЕЦИФИКАЦИЯ № 1', { b: true }]], { align: 'center', after: 200 }));
-  B.push(specTable(deal, exec, t));
-  B.push(p(`Порядок расчетов: оплата производится ${t.custGen === 'Покупателя' ? 'Покупателем' : 'Заказчиком'} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в течение ${days} (${cap(numberWords(days))}) рабочих дней в соответствии с п. 3.2 Договора.`, { align: 'both', first: 720, before: 200 }));
-  B.push(p(`Общая стоимость настоящего Приложения составляет: ${amountWithWords(total)} ${vatLine(total, exec)}`, { align: 'both', first: 720, after: deal.deadline ? 0 : 200 }));
-  if (deal.deadline) B.push(p(`${t.term}: ${longDate(deal.deadline)}`, { align: 'both', first: 720, after: 200 }));
-  B.push(signatures(cust, exec));
-  return docx(B.join(''), { title: `Договор ${t.title} № ${deal.number}`, header: 340 });
-}
-
-// ---------- invoice ----------
-// Bank block shown at the top of the first page (page header), as in the sample.
-function bankHeader(exec) {
-  const c = (v, o = {}) => ({ paras: [p(v, { align: o.align || 'left', r: { size: 11 } })], ...o });
-  const caption = s => p([[s, { size: 10 }]]);
-  const name = (v, cap) => ({ span: 4, paras: [p([[v, { size: 11 }]]), p([['', { size: 11 }]]), caption(cap)] });
-  const kpp = exec.kind === 'org' ? digits(exec.kpp) : '';
-  return table([
-    { h: 440, cells: [{ ...name(exec.bank, 'Банк получателя'), vmerge: 'restart' }, c('БИК'), c(exec.bik)] },
-    { h: 153, cells: [{ span: 4, vmerge: 'continue', t: '' }, c('Счет №'), c(exec.corr)] },
-    { h: 440, cells: [c('ИНН', { align: 'center' }), c(digits(exec.inn), { align: 'center' }), c('КПП', { align: 'center' }), c(kpp, { align: 'center' }), c('Счет №', { vmerge: 'restart' }), c(exec.account, { vmerge: 'restart' })] },
-    { h: 440, cells: [name(partyTitle(exec), 'Получатель'), { vmerge: 'continue', t: '' }, { vmerge: 'continue', t: '' }] }
-  ], { widths: [735, 1530, 675, 2475, 1845, 3210] }) + empty();
-}
-export function invoiceDocx(deal, cust, exec) {
-  const t = DEAL_TYPES[deal.type], total = sumItems(deal.items), B = [];
-  const nb = { borders: 'none' }, inn = party => `${partyTitle(party)}, ИНН: ${digits(party.inn)}`;
-  B.push(p([[`Счет на оплату № ${deal.invoiceNumber || deal.number} от ${longDate(deal.invoiceDate || deal.date)}`, { b: true, size: 18 }]], { line: 276 }), rule());
-  B.push(table([
-    [{ t: 'Получатель:', b: true, ...nb }, { t: inn(exec), align: 'both', ...nb }],
-    [{ t: 'Плательщик:', b: true, ...nb }, { t: inn(cust), align: 'both', ...nb }],
-    [{ t: 'Основание:', b: true, ...nb }, { t: `Договор ${t.title} № ${deal.number} от ${shortDate(deal.date)}`, align: 'both', ...nb }]
-  ], { widths: [1755, 8715] }), empty({ line: 276 }));
-  const head = s => ({ t: s, b: true, align: 'center', borders: { bottom: 6 } });
-  const it = (v, o = {}) => ({ t: v, align: 'center', valign: 'center', borders: { top: 6, left: 6, bottom: 6, right: 6 }, ...o });
-  const rows = [['№', 'Наименование товаров, работ, услуг', 'Кол-во', 'Ед. изм.', 'Цена (руб.)', 'Сумма (руб.)'].map(head)];
-  // As in the sample invoice: the unit stands under «Кол-во», the quantity under «Ед. изм.».
-  deal.items.forEach((x, i) => rows.push([it(String(i + 1), { valign: 'top' }), it(x.name, { align: 'both', valign: 'top' }), it(x.unit || ''), it(qty(x.qty)), it(money(x.price)), it(money(x.qty * x.price))]));
-  rows.push([{ t: '', borders: { bottom: 4 } }, { t: 'ИТОГО:', b: true, align: 'right', span: 4, borders: { bottom: 4 } }, { t: money(total), b: true, align: 'center', borders: { bottom: 4 } }]);
-  const tail = (label, value, first) => ({ h: 440, cells: [{ t: label, b: true, align: 'right', span: 5, borders: { top: first ? 4 : 0, left: 0, bottom: 0, right: 0 } }, { t: value, align: 'center', borders: { top: first ? 4 : 0, left: 0, bottom: 0, right: 0 } }] });
-  rows.push(tail('ИТОГО:', money(total), true));
-  rows.push(tail(vatPayer(exec) ? `В том числе НДС ${vatRate(exec)}%:` : 'НДС:', vatPayer(exec) ? money(vatAmount(total, exec)) : '–'));
-  rows.push(tail('Всего к оплате:', money(total)));
-  B.push(table(rows, { widths: [645, 4665, 960, 1095, 1440, 1635] }));
-  B.push(p(`Всего наименований ${deal.items.length} на сумму: ${money(Math.floor(total)).replace(/,\d\d$/, '')} руб. – ${String(Math.round(total * 100) % 100).padStart(2, '0')} коп.`), p(amountWords(total)), rule());
-  const s = signerLine(exec);
-  B.push(table([[{ t: s.pos, ...nb }, { t: s.name, align: 'right', ...nb }]], { widths: [5245, 5245] }), empty({ line: 276 }));
-  return docx(B.join(''), { title: `Счет № ${deal.invoiceNumber || deal.number}`, firstHeader: bankHeader(exec), header: 720 });
-}
-
-// ---------- act ----------
-export function actDocx(deal, cust, exec) {
-  const t = DEAL_TYPES[deal.type], total = sumItems(deal.items), B = [], ref = contractRef(deal, t);
-  const period = deal.period ? ` ${deal.period}` : '';
-  B.push(p([['Акт', { b: true }]], { align: 'center' }), p([[`${deal.type === 'works' ? 'сдачи-приемки выполненных работ по' : 'об исполнении обязательств по'} \n${cap(ref)}`, { b: true }]], { align: 'center' }));
-  B.push(placeDate(deal.city, deal.actDate || deal.deadline, { act: true }));
-  B.push(preamble(exec, t.exec, 'с одной стороны, и', { before: 100, after: 100 }));
-  B.push(preamble(cust, t.cust, 'с другой стороны,', { after: 160 }));
-  B.push(p('совместно именуемые «Стороны», заключили настоящий акт, в дальнейшем «Акт», о нижеследующем:', { align: 'both', first: 425, after: 200 }));
-  const li = (text, last) => p(text, { align: 'both', first: 425, num: true, after: last ? 200 : 0 });
-  const execBy = t.execGen === 'Поставщика' ? 'Поставщика' : t.execGen;
-  B.push(li(`Обязательства ${execBy} по ${ref}${period} выполнены в полном объеме в соответствии с Приложением № 1 – Спецификация № 1;`));
-  B.push(li(`Обязательства ${t.custGen} по ${ref}${period} ${deal.paid ? 'выполнены в полном объеме, оплата составила' : 'по оплате исполняются в соответствии с п. 3.2 Договора, стоимость составляет'}: ${amountWithWords(total)} ${deal.paid ? `${vatLine(total, exec)} Оплачена ${t.custGen === 'Покупателя' ? 'Покупателем' : 'Заказчиком'} в полном объеме;` : `${vatLine(total, exec).replace(/\.$/, '')};`}`));
-  B.push(li('Акт подтверждает отсутствие претензий между Сторонами и составлен в двух экземплярах, имеющих одинаковую юридическую силу, по одному для каждой из сторон.', true));
-  B.push(p([['Реквизиты сторон', { b: true }]], { align: 'center', keep: true }), partiesTable(cust, exec, t, { merged: true }), empty(), signatures(cust, exec), empty({ align: 'right' }));
-  return docx(B.join(''), { title: `Акт по договору № ${deal.number}` });
-}
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------
-const UPD_FIRST = 21, UPD_ROWS = 40, UPD_TOTAL = UPD_FIRST + UPD_ROWS; // totals row 61; rows below the items shifted by +35
-const R = r => r >= 26 ? r + UPD_ROWS - 5 : r; // template row numbers from the original form
+const UPD_FIRST = 21, UPD_ROWS = 6; // original approved form: six item rows, totals at 27
 function setCell(sheet, ref, value, kind = 'str') {
   const re = new RegExp(`<c r="${ref}"([^>]*?)(?:/>|>.*?</c>)`, 's');
   const m = sheet.match(re);
@@ -462,27 +227,67 @@ function setCell(sheet, ref, value, kind = 'str') {
   return sheet.replace(re, xml);
 }
 const hideRow = (sheet, r) => sheet.replace(new RegExp(`<row r="${r}"([^>]*)>`), (m, a) => `<row r="${r}"${a.replace(/ hidden="1"/, '')} hidden="1">`);
+function wrapUpdName(files, sheet, ref, value) {
+  if (String(value).length <= 85 && !String(value).includes('\n')) return sheet;
+  // The source signature cells have no wrapping. Long legal names need more
+  // lines, preserving the source font, size, alignment, number format and borders.
+  let styles = dec.decode(files['xl/styles.xml']);
+  const group = styles.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/);
+  const formats = [...group[1].matchAll(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map(m=>m[0]);
+  const cell = sheet.match(new RegExp(`<c r="${ref}"[^>]*>`))[0];
+  let format = formats[+cell.match(/ s="(\d+)"/)[1]];
+  format = format.replace(/<alignment([^>]*)\/>/, (_,attrs)=>`<alignment${attrs.replace(/ (wrapText|shrinkToFit)="[^"]*"/g,'')} wrapText="1"/>`);
+  styles = styles.replace(group[0],`<cellXfs count="${formats.length+1}">${group[1]}${format}</cellXfs>`);
+  files['xl/styles.xml'] = enc.encode(styles);
+  sheet = sheet.replace(cell,cell.replace(/ s="\d+"/,` s="${formats.length}"`));
+  const row = ref.replace(/[A-Z]/g,'');
+  const height = (Math.ceil(String(value).length/85)+1)*12;
+  return sheet.replace(new RegExp(`<row r="${row}"([^>]*)>`), (_,attrs)=> {
+    const existing = +(attrs.match(/ ht="([^"]+)"/)?.[1] || 0);
+    return `<row r="${row}"${attrs.replace(/ (ht|customHeight)="[^"]*"/g,'')} ht="${Math.max(height,existing)}" customHeight="1">`;
+  });
+}
+function updRows(sheet, count) {
+  const extra = Math.max(0, count - UPD_ROWS);
+  if (!extra) return sheet;
+  const row = sheet.match(/<row r="25"[^>]*>[\s\S]*?<\/row>/)[0];
+  const merges = [...sheet.matchAll(/<mergeCell ref="([A-Z]+)25:([A-Z]+)25"\s*\/>/g)];
+  // Move the totals and signature area together, including every merged range.
+  sheet = sheet.replace(/\b(r|ref)="([^"]+)"/g, (m, attr, value) => {
+    const shifted = value.replace(/(\$?[A-Z]+\$?)(\d+)/g, (v, col, n) => +n >= 27 ? col + (+n + extra) : v);
+    return `${attr}="${attr === 'r' && /^\d+$/.test(value) && +value >= 27 ? +value + extra : shifted}"`;
+  });
+  const added = Array.from({length:extra}, (_,i) => row.replace(/(r=")(?:([A-Z]+))?25"/g, (_, lead, col='') => `${lead}${col}${27+i}"`)).join('');
+  sheet = sheet.replace(new RegExp(`(<row r="${27+extra}")`), added + '$1');
+  const addedMerges = Array.from({length:extra}, (_,i) => merges.map(m => `<mergeCell ref="${m[1]}${27+i}:${m[2]}${27+i}"/>`).join('')).join('');
+  sheet = sheet.replace('</mergeCells>', addedMerges + '</mergeCells>');
+  return sheet.replace(/<mergeCells count="\d+"/, `<mergeCells count="${[...sheet.matchAll(/<mergeCell /g)].length}"`);
+}
 const OKEI = { штука: '796', шт: '796', 'шт.': '796', услуга: '', комплект: '839', упаковка: '778', килограмм: '166', кг: '166', метр: '006', м: '006', литр: '112', л: '112', час: '356', 'кв. м': '055', пара: '715', набор: '704', рулон: '736', лист: '625', экземпляр: '' };
 export function updXlsx(templateBuffer, deal, cust, exec) {
   const files = unzipStored(templateBuffer), t = DEAL_TYPES[deal.type], vat = vatPayer(exec), rate = vatRate(exec), goods = deal.type === 'supply';
-  let s = dec.decode(files['xl/worksheets/sheet1.xml']);
+  if (!files['xl/worksheets/sheet1.xml']) throw new Error('Не найден лист шаблона УПД');
+  const count = Math.max(UPD_ROWS, deal.items.length), totalRow = UPD_FIRST + count;
+  const R = row => row >= 27 ? row + count - UPD_ROWS : row;
+  let s = updRows(dec.decode(files['xl/worksheets/sheet1.xml']), deal.items.length);
   const set = (ref, v, k) => { s = setCell(s, ref, v, k); };
   const fio = exec.kind === 'org' ? exec.signer : exec.fio, short = f => { const [l = '', a = '', b = ''] = String(f || '').split(/\s+/); return `${l} ${a ? a[0] + '.' : ''}${b ? b[0] + '.' : ''}`.trim(); };
-  set('R2', deal.updNumber || deal.number); set('AA2', shortDate(deal.updDate || deal.deadline || deal.date));
+  const date = deal.updDate || deal.actDate || deal.deadline || deal.date;
+  set('R2', deal.updNumber || deal.number); set('AA2', shortDate(date));
   set('R3', '–'); set('AA3', '–');
   set('C6', vat ? '1' : '2');
   set('Y5', partyTitle(exec)); set('Y6', exec.address); set('Y7', exec.kind === 'org' ? `${digits(exec.inn)} / ${digits(exec.kpp)}` : digits(exec.inn));
   set('Y8', goods ? 'он же' : '–'); set('Y9', goods ? `${partyTitle(cust)}, ${cust.address}` : '–');
   set('AA10', '–'); set('AK10', '–');
   set('Y12', partyTitle(cust)); set('Y13', cust.address); set('Y14', cust.kind === 'org' ? `${digits(cust.inn)} / ${digits(cust.kpp)}` : digits(cust.inn));
-  if (deal.items.length > UPD_ROWS) throw new Error(`В УПД помещается ${UPD_ROWS} позиций, а в спецификации ${deal.items.length}`);
   let net = 0, tax = 0;
-  for (let i = 0; i < UPD_ROWS; i++) {
+  for (let i = 0; i < count; i++) {
     const r = UPD_FIRST + i, it = deal.items[i];
     if (!it) { s = hideRow(s, r); continue; }
     const sum = Math.round(it.qty * it.price * 100) / 100, itTax = vat ? Math.round(sum * rate / (100 + rate) * 100) / 100 : 0;
     net += sum - itTax; tax += itTax;
-    set(`I${r}`, i + 1, 'num'); set(`L${r}`, it.name); set(`R${r}`, '–');
+    const description = [it.name, it.description].filter(Boolean).join('\n');
+    set(`I${r}`, i + 1, 'num'); set(`L${r}`, description); set(`R${r}`, '–');
     const code = OKEI[String(it.unit || '').toLowerCase().trim()];
     set(`U${r}`, code || '–'); set(`W${r}`, it.unit || '–');
     set(`AD${r}`, +it.qty, 'num'); set(`AH${r}`, vat ? Math.round((it.price - it.price * rate / (100 + rate)) * 100) / 100 : +it.price, 'num');
@@ -493,18 +298,28 @@ export function updXlsx(templateBuffer, deal, cust, exec) {
     set(`BO${r}`, '–'); set(`BS${r}`, '–'); set(`BZ${r}`, '–');
   }
   const total = sumItems(deal.items);
-  set(`AO${UPD_TOTAL}`, Math.round(net * 100) / 100, 'num'); set(`BD${UPD_TOTAL}`, vat ? Math.round(tax * 100) / 100 : 'без НДС', vat ? 'num' : 'str'); set(`BJ${UPD_TOTAL}`, total, 'num');
-  set(`A${R(29)}`, '1');
-  if (exec.kind === 'org') { set(`AG${R(28)}`, short(fio)); set(`BS${R(28)}`, short(exec.accountant || fio)); set(`AG${R(30)}`, ''); set(`AY${R(30)}`, ''); }
-  else { set(`AG${R(28)}`, ''); set(`BS${R(28)}`, ''); set(`AG${R(30)}`, short(fio)); set(`AY${R(30)}`, `ОГРНИП ${exec.ogrn}`); }
-  set(`W${R(33)}`, `Договор ${t.title} № ${deal.number} от ${shortDate(deal.date)}`);
-  set(`Q${R(35)}`, '–');
+  set(`AO${totalRow}`, Math.round(net * 100) / 100, 'num'); set(`BD${totalRow}`, vat ? Math.round(tax * 100) / 100 : 'без НДС', vat ? 'num' : 'str'); set(`BJ${totalRow}`, total, 'num');
+  set(`A${R(30)}`, ''); // pagination depends on the user's printer; do not assert one page
+  if (exec.kind === 'org') { set(`AG${R(29)}`, short(fio)); set(`BS${R(29)}`, short(exec.accountant || fio)); set(`AG${R(31)}`, ''); set(`AY${R(31)}`, ''); }
+  else { set(`AG${R(29)}`, ''); set(`BS${R(29)}`, ''); set(`AG${R(31)}`, short(fio)); set(`AY${R(31)}`, `ОГРНИП ${exec.ogrn || ''}`); }
+  set(`W${R(34)}`, `Договор ${t.title} № ${deal.number} от ${shortDate(deal.date)}`);
+  set(`Q${R(36)}`, '–');
   const execPos = exec.kind === 'org' ? cap(exec.signerPosition || 'Директор') : 'Индивидуальный предприниматель', custPos = cust.kind === 'org' ? cap(cust.signerPosition || 'Директор') : cust.kind === 'ip' ? 'ИП' : '';
   const custFio = cust.kind === 'org' ? cust.signer : cust.fio;
-  for (const row of [38, 45]) { set(`A${R(row)}`, execPos === 'Индивидуальный предприниматель' ? 'ИП' : execPos); set(`Z${R(row)}`, short(fio)); set(`AR${R(row)}`, custPos); set(`BR${R(row)}`, short(custFio)); }
-  set(`A${R(48)}`, `${partyTitle(exec)}, ИНН ${digits(exec.inn)}`); set(`AR${R(48)}`, `${partyTitle(cust)}, ИНН ${digits(cust.inn)}`);
+  for (const row of [39, 46]) { set(`A${R(row)}`, execPos === 'Индивидуальный предприниматель' ? 'ИП' : execPos); set(`Z${R(row)}`, short(fio)); set(`AR${R(row)}`, custPos); set(`BR${R(row)}`, short(custFio)); }
+  set(`A${R(49)}`, exec.shortName || partyTitle(exec)); set(`AR${R(49)}`, cust.shortName || partyTitle(cust));
+  s = wrapUpdName(files, s, `A${R(49)}`, exec.shortName || partyTitle(exec));
+  s = wrapUpdName(files, s, `AR${R(49)}`, cust.shortName || partyTitle(cust));
+  if (date) {
+    const [year, month, day] = date.split('-');
+    for (const [col, value] of [['Q',day],['T',MONTHS[+month-1]],['Z',year.slice(0,2)],['AB',year.slice(2)],['BF',day],['BL',MONTHS[+month-1]],['BW',year.slice(0,2)],['BX',year.slice(2)]]) set(`${col}${R(41)}`, value);
+  }
+  let workbook = dec.decode(files['xl/workbook.xml']);
+  const printArea = `<definedName name="_xlnm.Print_Area" localSheetId="0">'Счет-фактура'!$A$1:$CG$${R(51)}</definedName>`;
+  workbook = workbook.replace('</definedNames>',printArea+'</definedNames>');
+  files['xl/workbook.xml'] = enc.encode(workbook);
   files['xl/worksheets/sheet1.xml'] = enc.encode(s);
-  return zip(files);
+  return new Blob([zip(files)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
 
 // Which documents make sense for this executor.
