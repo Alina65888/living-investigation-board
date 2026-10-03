@@ -158,6 +158,17 @@ test('archive and restore keep links', async () => {
   assert.ok(d.tasks.some(t => t.id === 't2')); assert.equal(d.relations.length, 1);
 });
 
+test('documents storage is for administrators only and refuses stale writes', async () => {
+  const first = await boss('/api/docs');
+  assert.equal(first.status, 200); assert.equal(first.data.data, null);
+  const saved = await boss('/api/docs', { data: { version: 1, parties: [{ id: 'x', kind: 'npd', fio: 'Тест', passport: '0000 000000' }], deals: [] }, revision: first.data.revision });
+  assert.equal(saved.status, 200);
+  assert.equal((await boss('/api/docs', { data: { version: 1, parties: [], deals: [] }, revision: first.data.revision })).status, 409, 'stale revision');
+  assert.equal((await boss('/api/docs')).data.data.parties[0].fio, 'Тест');
+  assert.equal((await anna('/api/docs')).status, 403, 'members never see passports and bank details');
+  assert.equal((await stranger('/api/docs')).status, 401);
+});
+
 test('password reset, deactivation, last admin and logout', async () => {
   const reset = await boss('/api/team', { name: 'Иван', email: 'ivan@example.com', role: 'member', active: true, resetPassword: true });
   assert.ok(reset.data.tempPassword);
