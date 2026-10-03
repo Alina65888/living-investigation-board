@@ -85,7 +85,7 @@ test('member changes only what is allowed on own tasks', async () => {
   const saved = r.data.data.tasks, s1 = saved.find(t => t.id === 't1'), s2 = saved.find(t => t.id === 't2'), s3 = saved.find(t => t.id === 't3');
   assert.equal(s1.status, 'doing'); assert.equal(s1.progress, 40); assert.equal(s1.title, 'Макеты'); assert.equal(s1.checklist[0].done, true);
   assert.equal(s2.status, 'planned', 'someone else’s task stays untouched');
-  assert.equal(s3.status, 'planned'); assert.deepEqual(s3.assigneeEmails, ['anna@example.com']); assert.equal(s3.requiresReview, true);
+  assert.equal(s3.status, 'planned'); assert.deepEqual(s3.assigneeEmails, ['anna@example.com']); assert.equal(s3.requiresReview, false, 'own tasks are closed without review');
 });
 
 test('stale admin save keeps the member’s change and new tasks', async () => {
@@ -108,7 +108,7 @@ test('files, submit for review, return and accept', async () => {
   assert.equal(up.status, 200);
   const blocked = new FormData(); blocked.append('taskId', 't2'); blocked.append('file', new Blob(['x']), 'x.txt');
   assert.equal((await anna('/api/task-files', null, { form: blocked })).status, 403);
-  assert.equal((await anna('/api/task-actions', { action: 'submit', id: 't1', text: 'Готово', url: 'https://example.com', fileIds: [up.data.id] })).status, 200);
+  assert.equal((await anna('/api/task-actions', { action: 'submit', id: 't1', text: 'Готово', url: 'https://example.com', fileIds: [up.data.id], review: true })).status, 200);
   let t1 = (await boss('/api/workspace')).data.data.tasks.find(t => t.id === 't1');
   assert.equal(t1.status, 'approval');
   assert.ok((await boss('/api/notifications')).data.some(n => n.message.includes('сдал(а) результат')));
@@ -116,7 +116,7 @@ test('files, submit for review, return and accept', async () => {
   await boss('/api/task-actions', { action: 'return', id: 't1', note: 'Добавьте обложку' });
   t1 = (await anna('/api/workspace')).data.data.tasks.find(t => t.id === 't1');
   assert.equal(t1.status, 'doing'); assert.equal(t1.result.review.decision, 'return');
-  await anna('/api/task-actions', { action: 'submit', id: 't1', text: 'С обложкой', fileIds: [] });
+  await anna('/api/task-actions', { action: 'submit', id: 't1', text: 'С обложкой', fileIds: [], review: true });
   await boss('/api/task-actions', { action: 'accept', id: 't1', note: 'Спасибо' });
   t1 = (await anna('/api/workspace')).data.data.tasks.find(t => t.id === 't1');
   assert.equal(t1.status, 'done'); assert.equal(t1.progress, 100);
@@ -125,6 +125,40 @@ test('files, submit for review, return and accept', async () => {
   assert.equal(await dl.text(), 'hello');
   const history = (await anna('/api/task-thread?id=t1')).data.map(x => x.body);
   assert.ok(history.some(b => b.startsWith('Результат принят')));
+});
+
+test('one tap closes a task; review only when the manager asks for it', async () => {
+  const sync = async (who, edit) => { const ws = (await who('/api/workspace')).data; edit(ws.data); return (await who('/api/workspace', { action: 'sync', data: ws.data, revision: ws.revision })).data.data; };
+  let t2 = (await sync(ivan, d => { d.tasks.find(t => t.id === 't2').status = 'done'; })).tasks.find(t => t.id === 't2');
+  assert.equal(t2.status, 'done'); assert.equal(t2.progress, 100);
+  t2 = (await sync(ivan, d => { d.tasks.find(t => t.id === 't2').status = 'doing'; })).tasks.find(t => t.id === 't2');
+  assert.equal(t2.status, 'doing', 'the executor can reopen a task closed by mistake');
+  await boss('/api/task-actions', { action: 'assign', ids: ['t2'], patch: { requiresReview: true } });
+  t2 = (await sync(ivan, d => { d.tasks.find(t => t.id === 't2').status = 'done'; })).tasks.find(t => t.id === 't2');
+  assert.equal(t2.status, 'approval', 'a task with mandatory review goes to the manager');
+  assert.ok((await boss('/api/notifications')).data.some(n => n.message.includes('нужна проверка')));
+  const plain = await ivan('/api/task-actions', { action: 'submit', id: 't3', text: 'x' });
+  assert.equal(plain.status, 403, 'submit stays limited to own tasks');
+});
+
+test('a first name in tasks links to the account; calendar events are kept', async () => {
+  const cur = (await boss('/api/workspace')).data;
+  cur.data.tasks.push({ id: 't4', title: 'Площадка', projectId: 'p1', status: 'planned', assignee: 'Мария', progress: 0, checklist: [] });
+  cur.data.events = [{ id: 'e1', title: 'Репетиция', date: '2026-11-20', time: '18:00' }];
+  const saved = (await boss('/api/workspace', { action: 'sync', data: cur.data, revision: cur.revision })).data.data;
+  assert.equal(saved.tasks.find(t => t.id === 't4').assigneeEmails.length, 0);
+  assert.equal(saved.events[0].title, 'Репетиция');
+  await boss('/api/team', { name: 'Мария Петрова', email: 'maria@example.com', role: 'member', active: true });
+  let ws = (await boss('/api/workspace')).data;
+  const t4 = ws.data.tasks.find(t => t.id === 't4');
+  assert.equal(t4.assignee, 'Мария Петрова'); assert.deepEqual(t4.assigneeEmails, ['maria@example.com']);
+  const member = (await anna('/api/workspace')).data;
+  await anna('/api/workspace', { action: 'sync', data: { ...member.data, events: [] }, revision: member.revision });
+  ws = (await boss('/api/workspace')).data;
+  assert.equal(ws.data.events.length, 1, 'members cannot remove events');
+  const { events, ...old } = ws.data;
+  await boss('/api/workspace', { action: 'sync', data: old, revision: ws.revision });
+  assert.equal((await boss('/api/workspace')).data.data.events.length, 1, 'a page without events keeps them');
 });
 
 test('comments, problems and notifications', async () => {

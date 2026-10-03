@@ -170,13 +170,27 @@ function admin_emails(): array { return array_column(all("SELECT email FROM user
 function require_admin(array $me): void { if ($me['role'] !== 'admin') fail(403, 'Действие доступно администратору'); }
 
 // ---------- tasks & people ----------
+// «Алина» in a task and the account «Алина Муллакаева» are the same person: an exact name wins,
+// otherwise a first name that belongs to exactly one active account is replaced by that account's full name.
+function canonical_name(string $name, array $team): string
+{
+    $n = mb_strtolower(trim($name));
+    $first = [];
+    foreach ($team as $m) {
+        if (!$m['active']) continue;
+        $full = mb_strtolower(trim($m['name']));
+        if ($full === $n) return $m['name'];
+        $first[explode(' ', $full)[0]][] = $m['name'];
+    }
+    return !str_contains($n, ' ') && count($first[$n] ?? []) === 1 ? $first[$n][0] : trim($name);
+}
 // Keeps assignee text, lead/contributors and the e-mails used for permissions in step.
 function apply_people(object $t, array $team): object
 {
     $co = is_array(prop($t, 'contributors')) ? array_map('strval', $t->contributors) : [];
     $joined = implode(', ', array_filter(array_merge([(string)prop($t, 'lead', '')], $co), fn($x) => $x !== ''));
     if ((string)prop($t, 'assignee', '') !== $joined) { $parts = split_names(prop($t, 'assignee', '')); $t->lead = $parts[0] ?? ''; $co = array_slice($parts, 1); }
-    $names = array_values(array_filter(array_merge([(string)prop($t, 'lead', '')], $co), fn($x) => $x !== ''));
+    $names = array_values(array_unique(array_map(fn($n) => canonical_name($n, $team), array_filter(array_merge([(string)prop($t, 'lead', '')], $co), fn($x) => $x !== ''))));
     $byName = [];
     foreach ($team as $m) if ($m['active']) $byName[mb_strtolower(trim($m['name']))] = $m['email'];
     $emails = array_values(array_unique(array_filter(array_map(fn($n) => $byName[mb_strtolower($n)] ?? null, $names))));
@@ -242,7 +256,7 @@ function mutate(callable $fn): array
 function ensure_shape(mixed $d): object
 {
     $d = is_object($d) ? $d : new stdClass();
-    foreach (['projects', 'tasks', 'relations', 'stages', 'milestones', 'organizations', 'archive'] as $k) if (!is_array(prop($d, $k))) $d->$k = [];
+    foreach (['projects', 'tasks', 'relations', 'stages', 'milestones', 'organizations', 'archive', 'events'] as $k) if (!is_array(prop($d, $k))) $d->$k = [];
     $d->tasks = array_values(array_filter($d->tasks, 'is_object'));
     return $d;
 }
@@ -251,9 +265,11 @@ function by_id(array $list): array { $m = []; foreach ($list as $x) if (is_objec
 function merge_admin(?object $server, object $incoming, int $base, int $current, int $next, array $team, array &$notes, array $me): object
 {
     $hadArchive = is_array(prop($incoming, 'archive'));
+    $hadEvents = is_array(prop($incoming, 'events'));
     $inc = ensure_shape($incoming);
     $srv = ensure_shape($server);
     $srvById = by_id($srv->tasks);
+    if (!$hadEvents) $inc->events = $srv->events; // an older page without calendar events keeps them
     if ($base === $current) {
         if (!$hadArchive) $inc->archive = $srv->archive;
     } else {
@@ -296,11 +312,21 @@ function merge_member(?object $server, object $incoming, int $next, array $team,
             if (!can_edit($s, $me)) continue;
             $changed = false;
             $st = prop($t, 'status');
-            if ($st !== prop($s, 'status') && in_array($st, MEMBER_STATUSES, true) && !in_array(prop($s, 'status'), ['done', 'approval'], true)) { $s->status = $st; $changed = true; }
+            $review = prop($s, 'requiresReview') === true;
+            $from = prop($s, 'status');
+            if (in_array($st, ['done', 'approval'], true) && !in_array($from, ['done', 'approval'], true)) {
+                // «Готово» closes the task; a task the manager wants to check (or one sent for review) goes to review instead.
+                $review = $review || $st === 'approval';
+                $s->status = $review ? 'approval' : 'done';
+                if (!$review) $s->progress = 100;
+                if ($review) notify($notes, $admins, $me['name'] . ' отметил(а) выполненной: «' . $s->title . '» — нужна проверка', $s->id, $me['email']);
+                $changed = true;
+            } elseif ($st !== $from && in_array($st, MEMBER_STATUSES, true) && $from !== 'approval' && ($from !== 'done' || !$review)) { $s->status = $st; $changed = true; }
             if (is_numeric(prop($t, 'progress'))) {
                 $p = max(0, min(100, (int)round((float)$t->progress)));
                 if ($p !== (int)prop($s, 'progress', 0)) { $s->progress = $p; $changed = true; }
             }
+            if (prop($s, 'status') === 'done' && (int)prop($s, 'progress', 0) !== 100) { $s->progress = 100; $changed = true; }
             if (is_array(prop($t, 'checklist')) && is_array(prop($s, 'checklist'))) {
                 foreach ($s->checklist as $i => $c) {
                     $x = $t->checklist[$i] ?? null;
@@ -316,7 +342,7 @@ function merge_member(?object $server, object $incoming, int $next, array $team,
                 'id' => $t->id, 'title' => trim(clip($t->title, 300)), 'description' => clip(prop($t, 'description', ''), 5000), 'projectId' => $projectId, 'stageId' => $stageId,
                 'status' => in_array(prop($t, 'status'), ['planned', 'doing'], true) ? $t->status : 'planned', 'priority' => in_array(prop($t, 'priority'), ['low', 'medium', 'high'], true) ? $t->priority : 'medium',
                 'startDate' => is_iso_date(prop($t, 'startDate')) ? (string)prop($t, 'startDate', '') : '', 'dueDate' => is_iso_date(prop($t, 'dueDate')) ? (string)prop($t, 'dueDate', '') : '',
-                'assignee' => $me['name'], 'lead' => $me['name'], 'contributors' => [], 'requiresReview' => true, 'createdBy' => $me['email'], 'createdAt' => now(), 'updatedAt' => now(),
+                'assignee' => $me['name'], 'lead' => $me['name'], 'contributors' => [], 'requiresReview' => false, 'createdBy' => $me['email'], 'createdAt' => now(), 'updatedAt' => now(),
                 'progress' => 0, 'checklist' => [], 'inbox' => $projectId === '', '_createdRev' => $next, '_rev' => $next,
             ];
             apply_people($nt, $team);
@@ -431,6 +457,18 @@ function handle_api(string $path, string $method, array $me): void
             if (prop($body, 'resetPassword')) { $temp = temp_password(); set_password($email, $temp, true); }
             if (prop($body, 'resetPassword') || !$active) q('DELETE FROM sessions WHERE email = ?', [$email]);
         }
+        // Names in tasks follow the team: a new account picks up the tasks assigned to its name or first name.
+        $team = team_list();
+        mutate(function ($server, $current, $next) use ($team) {
+            if ($server === null) return null;
+            $d = ensure_shape($server); $changed = false;
+            foreach ($d->tasks as $t) {
+                $before = json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails')]);
+                apply_people($t, $team);
+                if (json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails')]) !== $before) { $t->_rev = $next; $changed = true; }
+            }
+            return $changed ? $d : null;
+        });
         send_json(['ok' => true, 'tempPassword' => $temp]);
     }
 
@@ -520,7 +558,8 @@ function handle_api(string $path, string $method, array $me): void
                 case 'submit':
                     $t = $find(prop($body, 'id'));
                     if (!can_edit($t, $me)) fail(403, 'Можно сдавать только свои задачи');
-                    $review = prop($t, 'requiresReview') !== false;
+                    // Review only when the manager asked for it on this task or the executor chose «отправить на проверку».
+                    $review = prop($t, 'requiresReview') === true || prop($body, 'review') === true;
                     $url = (string)prop($body, 'url', '');
                     $t->result = (object)['text' => clip(prop($body, 'text', ''), 5000), 'url' => preg_match('#^https?://#', $url) ? clip($url, 2000) : '', 'fileIds' => array_map(fn($x) => clip($x, 100), array_slice((array)prop($body, 'fileIds', []), 0, 10)), 'submittedAt' => now(), 'submittedBy' => $me['email'], 'review' => null];
                     $t->status = $review ? 'approval' : 'done';
