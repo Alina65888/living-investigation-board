@@ -414,7 +414,8 @@ export function invoiceDocx(deal, cust, exec) {
   const head = s => ({ t: s, b: true, align: 'center', borders: { bottom: 6 } });
   const it = (v, o = {}) => ({ t: v, align: 'center', valign: 'center', borders: { top: 6, left: 6, bottom: 6, right: 6 }, ...o });
   const rows = [['№', 'Наименование товаров, работ, услуг', 'Кол-во', 'Ед. изм.', 'Цена (руб.)', 'Сумма (руб.)'].map(head)];
-  deal.items.forEach((x, i) => rows.push([it(String(i + 1), { valign: 'top' }), it(x.name, { align: 'both', valign: 'top' }), it(qty(x.qty)), it(x.unit || ''), it(money(x.price)), it(money(x.qty * x.price))]));
+  // As in the sample invoice: the unit stands under «Кол-во», the quantity under «Ед. изм.».
+  deal.items.forEach((x, i) => rows.push([it(String(i + 1), { valign: 'top' }), it(x.name, { align: 'both', valign: 'top' }), it(x.unit || ''), it(qty(x.qty)), it(money(x.price)), it(money(x.qty * x.price))]));
   rows.push([{ t: '', borders: { bottom: 4 } }, { t: 'ИТОГО:', b: true, align: 'right', span: 4, borders: { bottom: 4 } }, { t: money(total), b: true, align: 'center', borders: { bottom: 4 } }]);
   const tail = (label, value, first) => ({ h: 440, cells: [{ t: label, b: true, align: 'right', span: 5, borders: { top: first ? 4 : 0, left: 0, bottom: 0, right: 0 } }, { t: value, align: 'center', borders: { top: first ? 4 : 0, left: 0, bottom: 0, right: 0 } }] });
   rows.push(tail('ИТОГО:', money(total), true));
