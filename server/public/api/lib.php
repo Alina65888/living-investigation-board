@@ -202,6 +202,31 @@ function apply_people(object $t, array $team): object
     $t->assigneeEmail = $emails[0] ?? '';
     return $t;
 }
+// True when some task's people or e-mails no longer match the team (cheap check, no write).
+function people_outdated(mixed $data, array $team): bool
+{
+    if (!is_object($data)) return false;
+    foreach ((array)prop($data, 'tasks', []) as $t) {
+        if (!is_object($t)) continue;
+        $c = apply_people(json_decode(json_encode($t)), $team);
+        if (json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails', [])]) !== json_encode([$c->assignee, $c->assigneeEmails])) return true;
+    }
+    return false;
+}
+// Re-applies the team to every task and saves only if something changed.
+function relink_people(array $team): array
+{
+    return mutate(function ($server, $current, $next) use ($team) {
+        if ($server === null) return null;
+        $d = ensure_shape($server); $changed = false;
+        foreach ($d->tasks as $t) {
+            $before = json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails', [])]);
+            apply_people($t, $team);
+            if (json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails')]) !== $before) { $t->_rev = $next; $changed = true; }
+        }
+        return $changed ? $d : null;
+    });
+}
 function can_edit(object $t, array $me): bool
 {
     return $me['role'] === 'admin' || in_array($me['email'], (array)prop($t, 'assigneeEmails', []), true) || prop($t, 'assigneeEmail') === $me['email'] || prop($t, 'createdBy') === $me['email'];
@@ -409,7 +434,12 @@ function handle_api(string $path, string $method, array $me): void
     if ($me['must_change']) fail(403, 'Сначала задайте новый пароль');
 
     if ($path === '/api/workspace') {
-        if ($method === 'GET') { [$data, $rev] = load_workspace(); send_json(['me' => public_me($me), 'team' => team_list(), 'revision' => $rev, 'data' => $data]); }
+        if ($method === 'GET') {
+            $team = team_list();
+            [$data, $rev] = load_workspace();
+            if (people_outdated($data, $team)) [$data, $rev] = relink_people($team); // tasks imported before the accounts existed
+            send_json(['me' => public_me($me), 'team' => $team, 'revision' => $rev, 'data' => $data]);
+        }
         $body = read_json();
         if (prop($body, 'action') !== 'sync' || !is_object(prop($body, 'data'))) fail(400, 'Некорректный запрос');
         $team = team_list(); $admins = admin_emails(); $notes = [];
@@ -458,17 +488,7 @@ function handle_api(string $path, string $method, array $me): void
             if (prop($body, 'resetPassword') || !$active) q('DELETE FROM sessions WHERE email = ?', [$email]);
         }
         // Names in tasks follow the team: a new account picks up the tasks assigned to its name or first name.
-        $team = team_list();
-        mutate(function ($server, $current, $next) use ($team) {
-            if ($server === null) return null;
-            $d = ensure_shape($server); $changed = false;
-            foreach ($d->tasks as $t) {
-                $before = json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails')]);
-                apply_people($t, $team);
-                if (json_encode([prop($t, 'assignee'), prop($t, 'assigneeEmails')]) !== $before) { $t->_rev = $next; $changed = true; }
-            }
-            return $changed ? $d : null;
-        });
+        relink_people(team_list());
         send_json(['ok' => true, 'tempPassword' => $temp]);
     }
 
