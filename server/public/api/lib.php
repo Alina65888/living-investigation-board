@@ -609,6 +609,8 @@ function run(): void
         $uri = (string)parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
         $at = strpos($uri, '/api/');
         $path = $at === false ? $uri : rtrim(substr($uri, $at), '/');
+        // Without working rewrite rules the page calls /api/index.php/<route> directly.
+        $path = preg_replace('#^/api/index\\.php(?=/|$)#', '/api', $path);
         // Browsers send Origin on cross-site requests; together with SameSite cookies this blocks CSRF.
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
         if ($method !== 'GET' && $origin !== '') {
