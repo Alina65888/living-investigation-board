@@ -86,6 +86,8 @@ function migrate(PDO $pdo): void
         "sessions (id VARCHAR(64) PRIMARY KEY, email VARCHAR(191) NOT NULL, expires_at BIGINT NOT NULL)",
         "login_attempts (k VARCHAR(191) PRIMARY KEY, cnt INT NOT NULL, reset_at BIGINT NOT NULL)",
         "workspace (id INT PRIMARY KEY, data $long, revision INT NOT NULL)",
+        // Contract-generator cards (bank details, passports): kept apart from the workspace, admins only.
+        "docs (id INT PRIMARY KEY, data $long, revision INT NOT NULL)",
         "problems (id VARCHAR(64) PRIMARY KEY, title VARCHAR(400) NOT NULL, detail TEXT, task_id VARCHAR(128), author VARCHAR(191) NOT NULL, status VARCHAR(20) NOT NULL, response TEXT, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)",
         "notifications (id VARCHAR(64) PRIMARY KEY, email VARCHAR(191) NOT NULL, message TEXT NOT NULL, task_id VARCHAR(128), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))",
         "thread (id VARCHAR(64) PRIMARY KEY, task_id VARCHAR(128) NOT NULL, author VARCHAR(191) NOT NULL, body TEXT NOT NULL, request_id VARCHAR(128) UNIQUE, created_at VARCHAR(40) NOT NULL)",
@@ -93,7 +95,7 @@ function migrate(PDO $pdo): void
     ];
     foreach ($tables as $t) $pdo->exec('CREATE TABLE IF NOT EXISTS ' . $t . (is_mysql() ? ' DEFAULT CHARSET=utf8mb4' : ''));
     if (!is_mysql()) foreach (['sessions(email)', 'notifications(email, created_at)', 'thread(task_id, created_at)', 'files(task_id)'] as $i => $ix) $pdo->exec("CREATE INDEX IF NOT EXISTS ix$i ON $ix");
-    $pdo->exec((is_mysql() ? 'INSERT IGNORE' : 'INSERT OR IGNORE') . ' INTO workspace (id, data, revision) VALUES (1, NULL, 0)');
+    foreach (['workspace', 'docs'] as $t) $pdo->exec((is_mysql() ? 'INSERT IGNORE' : 'INSERT OR IGNORE') . " INTO $t (id, data, revision) VALUES (1, NULL, 0)");
 }
 function q(string $sql, array $args = []): PDOStatement { $st = db()->prepare($sql); $st->execute($args); return $st; }
 function one(string $sql, array $args = []): ?array { $r = q($sql, $args)->fetch(); return $r === false ? null : $r; }
@@ -392,6 +394,21 @@ function handle_api(string $path, string $method, array $me): void
         });
         flush_notes($notes);
         send_json(['revision' => $rev, 'data' => $data]);
+    }
+
+    if ($path === '/api/docs') {
+        require_admin($me);
+        if ($method === 'GET') {
+            $r = one('SELECT data, revision FROM docs WHERE id = 1');
+            send_json(['revision' => (int)$r['revision'], 'data' => $r['data'] !== null ? json_decode($r['data']) : null]);
+        }
+        $body = read_json();
+        if (!is_object(prop($body, 'data'))) fail(400, 'Некорректный запрос');
+        $json = json_encode($body->data, JSON_FLAGS);
+        if (strlen($json) > 5 * 1024 * 1024) fail(413, 'Слишком много данных');
+        $st = q('UPDATE docs SET data = ?, revision = revision + 1 WHERE id = 1 AND revision = ?', [$json, (int)prop($body, 'revision', 0)]);
+        if ($st->rowCount() !== 1) fail(409, 'Документы только что изменил другой руководитель. Обновите страницу, чтобы не затереть его правки.');
+        send_json(['revision' => (int)one('SELECT revision FROM docs WHERE id = 1')['revision']]);
     }
 
     if ($path === '/api/team' && $method === 'POST') {
