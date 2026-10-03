@@ -48,8 +48,9 @@ jobs:
           dir="$(printf '%s' "$RAW_DIR" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
           [ -n "$dir" ] && [ "${dir%/}" = "$dir" ] && dir="$dir/"
           echo "::add-mask::$host"
-          if ! getent hosts "$host" > /dev/null; then
-            echo "::error title=FTP_SERVER::Адрес из секрета FTP_SERVER не найден в интернете. Впишите его так, как в письме Рег.ру или в панели хостинга (раздел «FTP-пользователи»), например server123.hosting.reg.ru — без ftp:// и без пробелов."
+          is_ip=$(printf '%s' "$host" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' && echo yes || true)
+          if [ -z "$host" ] || { [ -z "$is_ip" ] && ! getent ahosts "$host" > /dev/null; }; then
+            echo "::error title=FTP_SERVER::Адрес из секрета FTP_SERVER не найден в интернете. Впишите его так, как в письме Рег.ру или в панели хостинга (раздел «FTP-пользователи»), например server260.hosting.reg.ru или IP-адрес из блока «Доступ к FTP» — без ftp:// и без пробелов."
             exit 1
           fi
           if [ -z "$dir" ]; then
