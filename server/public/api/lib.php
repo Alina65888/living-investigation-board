@@ -623,6 +623,12 @@ function run(): void
         send_json(['error' => $e->getMessage()], $e->status);
     } catch (Throwable $e) {
         error_log('Living Project HQ: ' . $e);
-        send_json(['error' => 'Ошибка сервера. Попробуйте ещё раз.'], 500);
+        // team + serverError let the page show «Сайт настраивается» with a hint instead of a blank login.
+        $hint = $e instanceof PDOException
+            ? (stripos($e->getMessage(), 'could not find driver') !== false
+                ? 'На хостинге не включено расширение PHP pdo_sqlite. Включите его в настройках PHP для сайта.'
+                : 'Сервер не смог открыть базу данных. Проверьте, что папка рядом с папкой сайта доступна для записи (living-hq-data).')
+            : 'Ошибка сервера. Подробности — в журнале ошибок PHP в панели хостинга.';
+        send_json(['error' => $hint, 'team' => true, 'serverError' => $hint], 500);
     }
 }
