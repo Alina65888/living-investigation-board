@@ -99,6 +99,10 @@ try{
   assert.ok(created);assert.equal(created.projectId,'');assert.equal(created.requiresReview,true);assert.equal(created.checklist.length,2);assert.equal(created.expectedResult,'Подписанный документ');
   assert.equal(await p.locator('#inspector').evaluate(e=>e.classList.contains('empty')),true,'quick creation must keep the task list open');
   await p.locator('[data-project="p1"]').click();await p.locator('#newTask').click();assert.equal(await p.locator('#mProject').inputValue(),'p1');await p.locator('.modal [data-close]').click();
+  assert.equal(await p.locator('.work-views button').allTextContents().then(xs=>xs.join('/')),'Список/Доска/Календарь');
+  assert.equal(await p.locator('[data-more-view]').isVisible(),false);
+  await p.locator('.work-tools summary').click();assert.equal(await p.locator('[data-more-view]').isVisible(),true);
+  await p.locator('.work-tools summary').click();
   await p.locator('[data-scope]').selectOption('today');
   await p.locator('tr[data-task="review"] [data-quick="dueDate"]').click();
   assert.equal(await p.locator('#inspector').evaluate(e=>e.classList.contains('empty')),true);
@@ -128,6 +132,12 @@ try{
   assert.equal(await q.locator('[data-answer-alert] article').count(),0);
   assert.equal(await q.locator('[data-response-count]').isVisible(),false);
   assert.equal(await q.locator('details.my-group').getAttribute('open'),null);
+  assert.equal(await q.locator('[data-add] [name=title]').isVisible(),false);
+  await q.locator('.my-add-toggle summary').click();assert.equal(await q.locator('[data-add] [name=title]').isVisible(),true);
+  await q.locator('.my-add-toggle summary').click();
+  assert.equal(await q.locator('.my-focus button:disabled').count(),0);
+  assert.equal(await q.locator('.my-task .task-next-step').count(),0);
+  assert.equal(await q.locator('.my-task').filter({hasText:'Проверить программу'}).locator('.st-approval').count(),1);
   await q.locator('[data-my-questions]').getByText('Нужны реквизиты',{exact:true}).waitFor();
   await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-help-task="simple"]').click();
@@ -146,6 +156,10 @@ try{
   await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-attach="simple"]').click();await q.locator('.modal [name=url]').fill('https://example.test/material');await q.locator('.modal [type=submit]').click();
   await q.locator('.modal').waitFor({state:'detached'});assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');assert.ok(m.calls.some(c=>c.path==='/api/task-thread'&&c.body.text.includes('https://example.test/material')));
+  assert.equal(await q.locator('#inspector [data-help]').textContent(),'Задать вопрос');
+  assert.equal(await q.locator('#inspector [data-clarify]').count(),0);
+  assert.equal(await q.locator('#inspector').getByText('Описание пока не добавлено.',{exact:true}).count(),0);
+  await q.locator('#inspector [data-task-questions]').getByText('Площадка ответит завтра',{exact:false}).waitFor();
   await q.locator('#inspector [data-close]').click();
   await q.locator('[data-done="simple"]').click();await waitForSaved(q);assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'done');
   await q.locator('.toast button').click();await waitForSaved(q);assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');assert.equal(m.data().tasks.find(t=>t.id==='simple').progress,30);

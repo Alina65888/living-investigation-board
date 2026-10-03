@@ -1,6 +1,6 @@
-import {hosted,session,isAdmin,loadWorkspace,saveWorkspace,settle} from './workspace-store.js?v=34';
-import {CorkBoard,LINKS} from './corkboard.js?v=34';
-import {wouldCreateCycle} from './schedule.js?v=34';
+import {hosted,session,isAdmin,loadWorkspace,saveWorkspace,settle} from './workspace-store.js?v=35';
+import {CorkBoard,LINKS} from './corkboard.js?v=35';
+import {wouldCreateCycle} from './schedule.js?v=35';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
