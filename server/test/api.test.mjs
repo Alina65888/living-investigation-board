@@ -1,10 +1,10 @@
-// End-to-end check of the team API against a running server:
-//   npm run db:init:local && npx wrangler dev   (with ADMIN_EMAIL=boss@example.com in .dev.vars, fresh local DB)
-//   BASE=http://127.0.0.1:8787 npm test
+// End-to-end check of the team API against a running server on an empty database:
+//   public/api/config.php with admin_email boss@example.com, then `npm run dev`
+//   BASE=http://127.0.0.1:8788 npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const BASE = process.env.BASE || 'http://127.0.0.1:8787';
+const BASE = process.env.BASE || 'http://127.0.0.1:8788';
 const ADMIN = { name: 'Алина Руководитель', email: 'boss@example.com', password: 'boss-password-1' };
 
 function client() {

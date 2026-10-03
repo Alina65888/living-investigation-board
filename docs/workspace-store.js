@@ -1,8 +1,8 @@
-// One storage contract for the personal board (GitHub Pages, IndexedDB) and the team server (Cloudflare, /api/*).
+// One storage contract for the personal board (GitHub Pages, IndexedDB) and the team server (server/, /api/*).
 // Address of the deployed team server; leave empty until it is published (the "team mode" links stay hidden).
-export const TEAM_URL='';
-// Team mode = this page is served by the team server. GitHub Pages and plain static hosting answer 404 on /api/me.
-async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;try{const r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'});if(!r.ok)return null;const x=await r.json();return x&&x.team===true?x:null}catch{return null}}
+export const TEAM_URL='https://zadachimantckd.ru';
+// Team mode = this page is served by the team server (PHP hosting). GitHub Pages and plain static hosting answer 404 on /api/me.
+async function detectTeam(){if(location.protocol==='file:'||/\.github\.io$/.test(location.hostname))return null;try{const r=await fetch('/api/me',{cache:'no-store',credentials:'same-origin'});if(r.status===404)return null;const x=await r.json();return x&&x.team===true?x:null}catch{return null}}
 export const auth=await detectTeam();
 export const hosted=!!auth;
 export const session={me:null,team:[],revision:0};

@@ -3,14 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "provision": "node scripts/provision.mjs",
-    "db:init:local": "wrangler d1 migrations apply living-project-hq --local",
-    "db:init": "wrangler d1 migrations apply living-project-hq --remote",
-    "deploy": "wrangler deploy",
+    "dev": "php -S 127.0.0.1:8788 -t ../docs dev-router.php",
+    "build": "node build.mjs",
     "test": "node --test test/*.test.mjs"
-  },
-  "devDependencies": {
-    "wrangler": "4.144.0"
   }
 }
