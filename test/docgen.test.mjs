@@ -47,11 +47,18 @@ test('documents per executor status', () => {
 
 test('files are valid zip packages with the expected content', async () => {
   const deal = { type: 'supply', number: '7', date: '2026-04-28', deadline: '2026-05-20', subject: 'цветы', items: [{ name: 'Гвоздики', unit: 'штука', qty: 400, price: 150 }] };
-  for (const make of [G.contractDocx, G.invoiceDocx, G.actDocx]) {
-    const files = G.unzipStored(await make(deal, ngo, org).arrayBuffer());
-    const xml = new TextDecoder().decode(files['word/document.xml']);
+  const xmlOf = async make => new TextDecoder().decode(G.unzipStored(await make(deal, ngo, org).arrayBuffer())['word/document.xml']);
+  for (const make of [G.contractDocx, G.invoiceDocx]) {
+    const xml = await xmlOf(make);
     assert.match(xml, /Гвоздики/); assert.match(xml, /60 000,00/);
   }
+  // The act follows the sample: no item table, the amount in words, a numbered list.
+  const act = await xmlOf(G.actDocx);
+  assert.match(act, /60 000 \(Шестьдесят тысяч\) руб\. – 00 коп\./); assert.match(act, /<w:numId w:val="1"\/>/); assert.doesNotMatch(act, /\.;/);
+  // Layout copied from the samples: A4, margins 709/709/850, Times New Roman 12.
+  assert.match(act, /<w:pgMar w:top="709" w:right="709" w:bottom="850" w:left="709"/);
+  const invoice = G.unzipStored(await G.invoiceDocx(deal, ngo, org).arrayBuffer());
+  assert.match(new TextDecoder().decode(invoice['word/header2.xml']), /Банк получателя/, 'bank block in the first-page header');
   const tpl = readFileSync(new URL('../docs/templates/upd.xlsx', import.meta.url));
   const upd = G.unzipStored(await G.updXlsx(tpl.buffer.slice(tpl.byteOffset, tpl.byteOffset + tpl.byteLength), deal, ngo, org).arrayBuffer());
   const sheet = new TextDecoder().decode(upd['xl/worksheets/sheet1.xml']);
