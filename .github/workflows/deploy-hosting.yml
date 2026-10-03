@@ -35,16 +35,39 @@ jobs:
           path: server/dist/site/
           include-hidden-files: true
           retention-days: 30
+      - name: Check the FTP address
+        id: ftp
+        if: env.FTP_SERVER != ''
+        env:
+          RAW_SERVER: ${{ secrets.FTP_SERVER }}
+          RAW_DIR: ${{ secrets.FTP_DIR }}
+        run: |
+          # Forgive common copy-paste extras: ftp://, spaces, a path or a :port after the host.
+          host="$(printf '%s' "$RAW_SERVER" | tr -d '[:space:]')"
+          host="${host#*://}"; host="${host%%/*}"; host="${host%%:*}"
+          dir="$(printf '%s' "$RAW_DIR" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          [ -n "$dir" ] && [ "${dir%/}" = "$dir" ] && dir="$dir/"
+          echo "::add-mask::$host"
+          if ! getent hosts "$host" > /dev/null; then
+            echo "::error title=FTP_SERVER::Адрес из секрета FTP_SERVER не найден в интернете. Впишите его так, как в письме Рег.ру или в панели хостинга (раздел «FTP-пользователи»), например server123.hosting.reg.ru — без ftp:// и без пробелов."
+            exit 1
+          fi
+          if [ -z "$dir" ]; then
+            echo "::error title=FTP_DIR::Секрет FTP_DIR пустой. Укажите папку сайта, например www/zadachimantckd.ru/"
+            exit 1
+          fi
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
       - name: Upload to hosting (FTPS)
         id: ftps
         if: env.FTP_SERVER != ''
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          server: ${{ steps.ftp.outputs.host }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_DIR }}
+          server-dir: ${{ steps.ftp.outputs.dir }}
           local-dir: server/dist/site/
           protocol: ftps
           security: loose
@@ -52,10 +75,10 @@ jobs:
         if: env.FTP_SERVER != '' && steps.ftps.outcome == 'failure'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
+          server: ${{ steps.ftp.outputs.host }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ secrets.FTP_DIR }}
+          server-dir: ${{ steps.ftp.outputs.dir }}
           local-dir: server/dist/site/
           protocol: ftp
       - name: Notice
