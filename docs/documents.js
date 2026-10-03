@@ -1,6 +1,6 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=32';
-import * as G from './docgen.js?v=32';
+import {loadDocs,saveDocs} from './workspace-store.js?v=33';
+import * as G from './docgen.js?v=33';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
