@@ -378,3 +378,13 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 
 .notification-button svg{width:20px;height:20px;flex:none}
 [data-doc-save]{display:block;font-size:12px;color:var(--muted);margin:4px 0}
+
+/* Explain the next action without adding mandatory reporting. */
+.task-next-step{padding:10px 12px;background:var(--panel2);border-radius:9px;font-size:14px;line-height:1.45;color:var(--text);margin:10px 0}
+.review-explanation{font-size:13px;line-height:1.4;color:var(--muted)}
+.my-group.is-returned{border-left:4px solid var(--st-approval)!important}
+.question-summary{padding:12px 0;border-top:1px solid var(--line)}
+.question-summary p,.question-detail{white-space:pre-wrap;overflow-wrap:anywhere}
+.week-day{border-top:1px solid var(--line);padding:12px 0}
+.week-day h3{font-size:15px;margin:0 0 8px}.week-day .wf-row{flex-wrap:wrap}
+@media(max-width:760px){.wf-inspector .task-primary-actions{position:sticky;top:0;z-index:5;padding:10px 0;background:var(--panel);border-bottom:1px solid var(--line);gap:6px}.wf-inspector .task-primary-actions .btn{min-height:42px}}

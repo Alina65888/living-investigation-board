@@ -46,7 +46,7 @@ async function setup(role='admin',width=1440){
     }else if(path==='/api/task-thread'){
       if(b){(threads[b.id]??=[]).push({body:b.text,author:me.email,created_at:new Date().toISOString()});out={ok:true};}else out=threads[u.searchParams.get('id')]||[];
     }else if(path==='/api/task-files'){out=files[u.searchParams.get('taskId')]||[];}
-    else if(path==='/api/problems'){if(b){Object.assign(problems.find(p=>p.id===b.id),b);out={ok:true};}else out=problems;}
+    else if(path==='/api/problems'){if(b){b.id?Object.assign(problems.find(p=>p.id===b.id),b):problems.push({...b,id:'question-'+problems.length,task_id:b.taskId,author:me.email,status:'open',created_at:new Date().toISOString()});out={ok:true};}else out=problems;}
     else if(path==='/api/notifications')out=[];
     else throw Error('Unexpected API path '+path);
     await route.fulfill({json:out});
@@ -59,6 +59,8 @@ try{
   const a=await setup(),p=a.page;
   assert.equal(await p.locator('.view-tabs .tab').count(),4);
   await p.getByRole('heading',{name:'Что требует решения',exact:true}).waitFor();
+  await p.getByRole('heading',{name:/Ближайшие 7 дней/}).waitFor();
+  assert.equal(await p.locator('.week-overview').getByText('Дальняя задача',{exact:true}).count(),0);
   await p.locator('[data-accept-task="approval"]').click();
   await p.waitForFunction(()=>!document.querySelector('[data-accept-task="approval"]'));
   assert.equal(a.data().tasks.find(t=>t.id==='approval').status,'done');
@@ -101,6 +103,17 @@ try{
   const m=await setup('member'),q=m.page;
   assert.equal(await q.locator('.view-tabs .tab').count(),3);
   assert.equal(await q.locator('details.my-group').getAttribute('open'),null);
+  await q.locator('[data-my-questions]').getByText('Нужны реквизиты',{exact:true}).waitFor();
+  await q.locator('[data-help-task="simple"]').click();
+  await q.locator('.modal [name=reason]').selectOption('deadline');
+  await q.locator('.modal [name=detail]').fill('Площадка ответит завтра');
+  await q.locator('.modal [name=proposedDate]').fill('2027-01-12');
+  await q.locator('.modal [type=submit]').click();await q.locator('.modal').waitFor({state:'detached'});
+  assert.equal(m.data().tasks.find(t=>t.id==='simple').dueDate,date);
+  assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');
+  assert.equal(m.calls.filter(c=>c.path==='/api/workspace'||c.path==='/api/task-actions').length,0);
+  assert.ok(m.calls.some(c=>c.path==='/api/problems'&&c.body.detail.includes('12.01.2027')));
+  await q.locator('[data-my-questions]').getByText('Не успеваю к сроку: Позвонить на площадку',{exact:true}).waitFor();
   await q.locator('[data-done="review"]').click();
   await q.locator('.modal textarea[name=text]').waitFor();assert.equal(m.data().tasks.find(t=>t.id==='review').status,'doing');
   await q.locator('.modal [data-close]').click();
