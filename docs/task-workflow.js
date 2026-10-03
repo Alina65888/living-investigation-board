@@ -1,4 +1,4 @@
-import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js';
+import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js?v=28';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={planned:'Запланирована',doing:'В работе',blocked:'Нужна помощь',approval:'На проверке',done:'Готово'};
 const day=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});
