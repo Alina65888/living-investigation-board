@@ -1,13 +1,13 @@
 // Team mode sign-in: first administrator, email + password login, forced change of a temporary password,
 // and the small account menu (change password, sign out).
-import {api,auth,hosted} from './workspace-store.js?v=35';
+import {api,auth,hosted} from './workspace-store.js?v=36';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
 function screen(title,lead,fields,button,footer=''){
   const root=document.querySelector('#app');
-  root.innerHTML=`<main class="auth-page"><form class="auth-card" novalidate><div class="auth-brand"><span class="auth-mark"></span><b>Living Project HQ</b></div><h1>${esc(title)}</h1><p class="auth-lead">${lead}</p>${fields.map(([name,label,type,extra=''])=>`<label class="auth-field"><span>${esc(label)}</span><input name="${name}" type="${type}" required ${extra}></label>`).join('')}<p class="auth-error" role="alert"></p><button class="auth-submit" type="submit">${esc(button)}</button>${footer}</form></main>`;
-  const form=root.querySelector('form');form.querySelector('input')?.focus();
+  root.innerHTML=`<main class="auth-page"><form class="auth-card"><div class="auth-brand"><span class="auth-mark"></span><b>Living Project HQ</b></div><h1>${esc(title)}</h1><p class="auth-lead">${lead}</p>${fields.map(([name,label,type,extra=''])=>`<label class="auth-field"><span>${esc(label)}</span><input name="${name}" type="${type}" required ${extra}></label>`).join('')}<p class="auth-error" role="alert"></p><button class="auth-submit" type="submit">${esc(button)}</button>${footer}</form></main>`;
+  const form=root.querySelector('form');form.querySelectorAll('input[type=password]').forEach(input=>{const toggle=document.createElement('button');toggle.type='button';toggle.className='auth-password-toggle';toggle.textContent='Показать пароль';toggle.setAttribute('aria-pressed','false');toggle.onclick=()=>{const show=input.type==='password';input.type=show?'text':'password';toggle.textContent=show?'Скрыть пароль':'Показать пароль';toggle.setAttribute('aria-pressed',String(show));};input.after(toggle)});form.querySelector('input')?.focus();
   return form;
 }
 function onSubmit(form,handler){
