@@ -175,6 +175,38 @@ test('comments, problems and notifications', async () => {
   assert.ok((await ivan('/api/notifications')).data.every(n => n.read_at));
 });
 
+test('deadline decisions are atomic, permission checked, and protect a newer date', async () => {
+  let ws=(await boss('/api/workspace')).data;
+  ws.data.tasks.push({id:'deadline-test',title:'Согласование срока',status:'doing',assignee:'Анна',dueDate:'2026-10-10',startDate:'2026-10-01',checklist:[],progress:0});
+  await boss('/api/workspace',{action:'sync',data:ws.data,revision:ws.revision});
+  const request={title:'Не успеваю',detail:'Жду площадку',taskId:'deadline-test',reason:'deadline',proposedDate:'2026-10-15'};
+  assert.equal((await ivan('/api/problems',request)).status,403);
+  assert.equal((await anna('/api/problems',{...request,proposedDate:'2026-02-31'})).status,400);
+  assert.equal((await anna('/api/problems',request)).status,200);
+  assert.equal((await anna('/api/problems',request)).status,409);
+  let p=(await anna('/api/problems')).data.find(x=>x.task_id==='deadline-test');
+  assert.equal(p.proposed_date,'2026-10-15');assert.equal(p.original_due,'2026-10-10');
+  assert.equal((await anna('/api/problems',{id:p.id,decision:'approve'})).status,403);
+  assert.equal((await boss('/api/problems',{id:p.id,version:p.response_version,decision:'approve',date:'2026-10-16'})).status,200);
+  assert.equal((await boss('/api/workspace')).data.data.tasks.find(t=>t.id==='deadline-test').dueDate,'2026-10-16');
+  p=(await anna('/api/problems')).data.find(x=>x.id===p.id);assert.equal(p.status,'resolved');assert.equal(p.decision,'approve');assert.equal(p.response_read,false);
+  assert.equal((await boss('/api/problems',{id:p.id,decision:'approve'})).status,409);
+  assert.equal((await ivan('/api/problems',{id:p.id,action:'read',version:p.response_version})).status,403);
+  assert.equal((await anna('/api/problems',{id:p.id,action:'read',version:p.response_version})).status,200);
+  assert.equal((await anna('/api/problems')).data.find(x=>x.id===p.id).response_read,true);
+  await boss('/api/problems',{id:p.id,status:'resolved',response:'Уточнение решения'});
+  assert.equal((await anna('/api/problems')).data.find(x=>x.id===p.id).response_read,false);
+  assert.equal((await anna('/api/problems',{id:p.id,action:'read',version:p.response_version})).status,409);
+  await anna('/api/problems',{...request,proposedDate:'2026-10-20'});
+  p=(await anna('/api/problems')).data.find(x=>x.task_id==='deadline-test'&&x.status==='open');
+  await boss('/api/task-actions',{action:'assign',ids:['deadline-test'],patch:{dueDate:'2026-10-18'}});
+  assert.equal((await boss('/api/problems',{id:p.id,decision:'approve'})).status,409);
+  assert.equal((await boss('/api/problems')).data.find(x=>x.id===p.id).status,'open');
+  assert.equal((await boss('/api/workspace')).data.data.tasks.find(t=>t.id==='deadline-test').dueDate,'2026-10-18');
+  assert.equal((await boss('/api/problems',{id:p.id,decision:'reject',response:''})).status,400);
+  assert.equal((await boss('/api/problems',{id:p.id,decision:'reject',response:'Оставляем согласованную дату'})).status,200);
+});
+
 test('archive and restore keep links', async () => {
   const ws = (await boss('/api/workspace')).data;
   ws.data.relations = [{ id: 'r1', sourceId: 't2', targetId: 't3', type: 'blocks' }];

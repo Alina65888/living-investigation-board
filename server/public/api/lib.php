@@ -89,6 +89,8 @@ function migrate(PDO $pdo): void
         // Contract-generator cards (bank details, passports): kept apart from the workspace, admins only.
         "docs (id INT PRIMARY KEY, data $long, revision INT NOT NULL)",
         "problems (id VARCHAR(64) PRIMARY KEY, title VARCHAR(400) NOT NULL, detail TEXT, task_id VARCHAR(128), author VARCHAR(191) NOT NULL, status VARCHAR(20) NOT NULL, response TEXT, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)",
+        "problem_requests (problem_id VARCHAR(64) PRIMARY KEY, reason VARCHAR(30) NOT NULL, proposed_date VARCHAR(10), original_due VARCHAR(10), decision VARCHAR(20))",
+        "problem_reads (problem_id VARCHAR(64) NOT NULL, email VARCHAR(191) NOT NULL, response_version VARCHAR(64) NOT NULL, PRIMARY KEY (problem_id,email))",
         "notifications (id VARCHAR(64) PRIMARY KEY, email VARCHAR(191) NOT NULL, message TEXT NOT NULL, task_id VARCHAR(128), created_at VARCHAR(40) NOT NULL, read_at VARCHAR(40))",
         "thread (id VARCHAR(64) PRIMARY KEY, task_id VARCHAR(128) NOT NULL, author VARCHAR(191) NOT NULL, body TEXT NOT NULL, request_id VARCHAR(128) UNIQUE, created_at VARCHAR(40) NOT NULL)",
         "files (id VARCHAR(64) PRIMARY KEY, task_id VARCHAR(128) NOT NULL, name VARCHAR(255) NOT NULL, type VARCHAR(120) NOT NULL, size INT NOT NULL, author VARCHAR(191) NOT NULL, created_at VARCHAR(40) NOT NULL)",
@@ -252,6 +254,7 @@ function people_changes(?object $before, object $after, array &$notes, string $a
 }
 
 // ---------- workspace ----------
+function valid_day(string $date): bool { $d=DateTimeImmutable::createFromFormat('!Y-m-d',$date); return $d && $d->format('Y-m-d')===$date; }
 function load_workspace(): array
 {
     $r = one('SELECT data, revision FROM workspace WHERE id = 1');
@@ -493,23 +496,68 @@ function handle_api(string $path, string $method, array $me): void
     }
 
     if ($path === '/api/problems') {
-        if ($method === 'GET') send_json($me['role'] === 'admin' ? all('SELECT * FROM problems ORDER BY created_at DESC LIMIT 300') : all('SELECT * FROM problems WHERE author = ? ORDER BY created_at DESC LIMIT 300', [$me['email']]));
-        $body = read_json(); $notes = [];
-        if (prop($body, 'id')) {
-            require_admin($me);
-            $p = one('SELECT * FROM problems WHERE id = ?', [(string)$body->id]) ?? fail(404, 'Проблема не найдена');
-            $status = in_array(prop($body, 'status'), ['open', 'review', 'resolved'], true) ? $body->status : $p['status'];
-            q('UPDATE problems SET status = ?, response = ?, updated_at = ? WHERE id = ?', [$status, clip(prop($body, 'response', ''), 5000), now(), $p['id']]);
-            notify($notes, [$p['author']], 'Руководитель ответил: «' . $p['title'] . '»', $p['task_id'], $me['email']);
-        } else {
-            $title = trim(clip(prop($body, 'title'), 300));
-            if ($title === '') fail(400, 'Опишите проблему');
-            $taskId = prop($body, 'taskId') ? clip($body->taskId, 100) : null;
-            q("INSERT INTO problems (id, title, detail, task_id, author, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'open', ?, ?)", [uid(), $title, clip(prop($body, 'detail', ''), 5000), $taskId, $me['email'], now(), now()]);
-            notify($notes, admin_emails(), $me['name'] . ' просит помощи: «' . $title . '»', $taskId, $me['email']);
+        if ($method === 'GET') {
+            $sql = 'SELECT p.*, r.reason, r.proposed_date, r.original_due, r.decision, seen.response_version AS seen_version FROM problems p LEFT JOIN problem_requests r ON r.problem_id=p.id LEFT JOIN problem_reads seen ON seen.problem_id=p.id AND seen.email=?';
+            $rows = all($sql . ($me['role'] === 'admin' ? '' : ' WHERE p.author=?') . ' ORDER BY p.created_at DESC LIMIT 300', $me['role'] === 'admin' ? [$me['email']] : [$me['email'], $me['email']]);
+            foreach ($rows as &$row) { $row['response_version'] = hash('sha256', ($row['response'] ?? '') . '|' . $row['updated_at'] . '|' . $row['status']); $row['response_read'] = $row['seen_version'] === $row['response_version']; unset($row['seen_version']); }
+            send_json($rows);
         }
-        flush_notes($notes);
-        send_json(['ok' => true]);
+        $body = read_json();
+        [, $rev] = mutate(function($server, $current, $next) use ($body, $me) {
+            $notes = []; $d = ensure_shape($server); $changed = false;
+            if (prop($body, 'id')) {
+                $p = one('SELECT * FROM problems WHERE id=?', [(string)$body->id]) ?? fail(404, 'Вопрос не найден');
+                $version = hash('sha256', ($p['response'] ?? '') . '|' . $p['updated_at'] . '|' . $p['status']);
+                if (prop($body, 'action') === 'read') {
+                    if ($p['author'] !== $me['email']) fail(403, 'Можно отмечать только свои ответы');
+                    if (prop($body, 'version') !== $version) fail(409, 'Ответ изменился. Обновите список.');
+                    q('DELETE FROM problem_reads WHERE problem_id=? AND email=?', [$p['id'],$me['email']]);
+                    q('INSERT INTO problem_reads(problem_id,email,response_version) VALUES(?,?,?)', [$p['id'],$me['email'],$version]);
+                    return null;
+                }
+                require_admin($me);
+                if (prop($body, 'version') && $body->version !== $version) fail(409, 'Другой руководитель уже ответил. Обновите список.');
+                $status = in_array(prop($body, 'status'), ['open','review','resolved'], true) ? $body->status : $p['status'];
+                $response = trim(clip(prop($body, 'response', ''), 5000));
+                $decision = prop($body, 'decision');
+                if ($decision) {
+                    if (!in_array($decision, ['approve','reject'], true)) fail(400, 'Неизвестное решение');
+                    $r = one('SELECT * FROM problem_requests WHERE problem_id=?', [$p['id']]);
+                    if (!$r || $r['reason'] !== 'deadline' || $r['decision'] || $p['status'] === 'resolved') fail(409, 'Запрос уже рассмотрен или не является переносом срока');
+                    if ($decision === 'approve') {
+                        $task = by_id($d->tasks)[$p['task_id']] ?? fail(409, 'Задача уже в архиве');
+                        if (prop($task,'status') === 'done') fail(409, 'Задача уже завершена');
+                        if ((string)prop($task,'dueDate','') !== $r['original_due']) fail(409, 'Срок уже изменился. Закройте этот запрос и уточните актуальную дату.');
+                        $date = (string)prop($body,'date',$r['proposed_date']);
+                        if (!valid_day($date) || (prop($task,'startDate') && $date < $task->startDate)) fail(400, 'Проверьте новую дату и дату начала задачи');
+                        $task->dueDate=$date; $task->_rev=$next; $task->updatedAt=now(); $task->updatedBy=$me['email']; $changed=true;
+                        $response='Срок согласован: ' . $date . ($response ? '. ' . $response : '');
+                        q('INSERT INTO thread(id,task_id,author,body,created_at) VALUES(?,?,?,?,?)',[uid(),$task->id,$me['email'],$response,now()]);
+                    } else { if ($response === '') fail(400, 'Объясните, почему срок не переносим'); $response='Перенос срока отклонён. ' . $response; }
+                    q('UPDATE problem_requests SET decision=? WHERE problem_id=?',[$decision,$p['id']]); $status='resolved';
+                }
+                q('UPDATE problems SET status=?, response=?, updated_at=? WHERE id=?',[$status,$response,now(),$p['id']]);
+                notify($notes,[$p['author']],'Руководитель ответил: «'.$p['title'].'»',$p['task_id'],$me['email']);
+            } else {
+                $title=trim(clip(prop($body,'title'),300)); if ($title==='') fail(400,'Опишите вопрос');
+                $taskId=prop($body,'taskId')?clip($body->taskId,100):null;
+                $reason=clip(prop($body,'reason','question'),30); $date=(string)prop($body,'proposedDate',''); $original='';
+                if ($taskId && !isset(by_id($d->tasks)[$taskId])) fail(404,'Задача не найдена');
+                if ($reason==='deadline') {
+                    $task=by_id($d->tasks)[$taskId??'']??fail(400,'Выберите задачу для переноса срока');
+                    if (!can_edit($task,$me)) fail(403,'Можно запрашивать срок только своих задач');
+                    if (prop($task,'status')==='done') fail(409,'Задача уже завершена');
+                    if (!valid_day($date) || (prop($task,'startDate') && $date<$task->startDate)) fail(400,'Укажите допустимую новую дату');
+                    $original=(string)prop($task,'dueDate',''); if ($original===$date) fail(400,'Эта дата уже установлена');
+                    if (one("SELECT p.id FROM problems p JOIN problem_requests r ON r.problem_id=p.id WHERE p.task_id=? AND p.author=? AND p.status!='resolved' AND r.reason='deadline' AND r.decision IS NULL",[$taskId,$me['email']])) fail(409,'По этой задаче уже есть запрос переноса. Дождитесь решения в разделе «Ждут моего ответа».');
+                }
+                $id=uid();q("INSERT INTO problems(id,title,detail,task_id,author,status,created_at,updated_at) VALUES(?,?,?,?,?,'open',?,?)",[$id,$title,clip(prop($body,'detail',''),5000),$taskId,$me['email'],now(),now()]);
+                q('INSERT INTO problem_requests(problem_id,reason,proposed_date,original_due) VALUES(?,?,?,?)',[$id,$reason,$reason==='deadline'?$date:null,$original]);
+                notify($notes,admin_emails(),$me['name'].' просит помощи: «'.$title.'»',$taskId,$me['email']);
+            }
+            flush_notes($notes); return $changed?$d:null;
+        });
+        send_json(['ok'=>true,'revision'=>$rev]);
     }
 
     if ($path === '/api/notifications') {
