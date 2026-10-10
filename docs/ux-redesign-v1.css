@@ -16,3 +16,10 @@ body{overflow-x:hidden}
 }
 .command-panel{border:1px solid var(--ux-line);border-radius:24px;padding:20px}
 .team-avatar{width:44px;height:44px;border-radius:50%;object-fit:cover}
+
+/* Document project folders and readable download names on narrow screens. */
+.docs-folders .docs-tabs{flex-wrap:wrap}
+.docs-folders .docs-card{min-width:0;text-align:left}
+.docs-folders .docs-card b,.docs-filenames p{overflow-wrap:anywhere}
+.docs-filenames{flex-basis:100%;min-width:0;width:100%}
+.docs-filenames p{font-size:13px;margin:6px 0}

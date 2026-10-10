@@ -1,6 +1,6 @@
 // Team mode sign-in: first administrator, email + password login, forced change of a temporary password,
 // and the small account menu (change password, sign out).
-import {api,auth,hosted} from './workspace-store.js?v=38';
+import {api,auth,hosted} from './workspace-store.js?v=39';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
