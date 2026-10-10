@@ -54,8 +54,9 @@ const deal = { type:'supply', number:'7', date:'2026-04-28', deadline:'2026-05-2
 test('Word fills approved templates and preserves styles, fonts, margins and bank header', async () => {
   for (const executor of [org,{...npd,kind:'ip',ogrn:'123456789012345'},npd]) {
     for (const type of ['supply','services','works']) {
-      const d={...deal,type};
+      const d={...deal,type,period:'с 28 апреля по 20 мая 2026 г.'};
       for (const kind of ['contract','invoice','act']) {
+        if(kind==='contract'&&(type!=='services'||executor.kind!=='npd')){await assert.rejects(()=>word(kind,d,ngo,executor),/Новый шаблон/);continue;}
         const result=await word(kind,d,ngo,executor);
         const source=G.unzipStored(template(kind,d,executor));
         const document=text(result['word/document.xml']);
@@ -63,7 +64,7 @@ test('Word fills approved templates and preserves styles, fonts, margins and ban
         for (const path of ['word/styles.xml','word/settings.xml','word/fontTable.xml','word/theme/theme1.xml']) assert.deepEqual(result[path],source[path],path);
         const section = xml => xml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/)[0];
         assert.equal(section(document),section(text(source['word/document.xml'])));
-        assert.match(document, /60 000/);
+        assert.match(document, /60[ \u00a0]000/);
         if(kind!=='invoice')assert.match(document,/Петрова|Петровой/);
         if(kind!=='act')assert.match(document,/Гвоздики/);
         if(kind==='contract')assert.match(document,/Живые цветы/);
@@ -120,7 +121,7 @@ test('UPD preserves the approved style package, expands rows, descriptions and c
 });
 
 test('all template packages are anonymous; no original signers or bank details remain', () => {
-  for(const name of ['supply-org.docx','supply-ip.docx','services.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
+  for(const name of ['services.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
     const files=G.unzipStored(bufferOf('../docs/templates/'+name));
     const xml=Object.entries(files).filter(([name])=>name.endsWith('.xml')).map(([,v])=>text(v)).join('');
     const visible=[...xml.matchAll(/<(?:w:)?t(?:\s[^>]*)?>([^<]*)<\//g)].map(m=>m[1]).join(' ');
@@ -140,4 +141,21 @@ test('long UPD names wrap without changing fonts', async () => {
   assert.equal(updated.match(/<fonts[\s\S]*?<\/fonts>/)[0],original.match(/<fonts[\s\S]*?<\/fonts>/)[0]);
   assert.match(text(result['xl/worksheets/sheet1.xml']),/<row r="49"[^>]* ht="36"/);
   assert.ok(text(result['xl/worksheets/sheet1.xml']).includes(name));
+});
+
+
+test('only the new service contract is used, with fixed approved terms and repeated rows', async () => {
+  const d={...deal,type:'services',period:'с 28 апреля по 20 мая 2026 г.',payDays:99,items:[...deal.items,{name:'Другая услуга <&>',description:'Детали',unit:'час',qty:2,price:100}]};
+  const output=await word('contract',d,ngo,npd),document=text(output['word/document.xml']);
+  assert.equal(G.templateName('contract',{...d,type:'supply'},org),'services');
+  assert.match(document,/15 \(Пятнадцати\) календарных дней/);
+  assert.match(document,/подписания Акта об оказании услуг/);
+  assert.match(document,/Налог на профессиональный доход/);
+  assert.match(document,/4.1. Исполнитель обязуется передать сведения/);
+  assert.match(document,/1.2/);assert.match(document,/Другая услуга &lt;&amp;&gt;/);
+  assert.doesNotMatch(document,/99.*рабочих|\{\{\w+\}\}|<!--items:/);
+  await assert.rejects(()=>word('contract',{...d,period:''},ngo,npd),/период оказания услуг/);
+  // The original borderless requisites and bordered specification remain distinct.
+  const source=G.unzipStored(template('contract',d,npd));
+  for(const path of Object.keys(source).filter(p=>p!=='word/document.xml')) assert.deepEqual(output[path],source[path],path);
 });
