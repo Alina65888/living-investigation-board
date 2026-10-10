@@ -1,5 +1,5 @@
 // «Связи»: dependency map drawn as an investigation board — one case zone per project, yarn between tasks.
-import {CorkBoard} from './corkboard.js?v=39';
+import {CorkBoard} from './corkboard.js?v=40';
 
 const CARD_W=4.1,CARD_H=3.05,GAP_X=1.75,GAP_Y=.6,PAD=.6,HEAD=1.5,ZONE_GAP=1.6,ROW_MAX=30;
 const plural=(n,one,few,many)=>{const a=Math.abs(n)%100,b=a%10;return `${n} ${a>10&&a<20?many:b===1?one:b>=2&&b<=4?few:many}`};

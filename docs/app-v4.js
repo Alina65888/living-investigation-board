@@ -1,13 +1,13 @@
-import {bindDraft,draftKey} from './drafts.js?v=39';
-import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=39';
-import {createWorkflow} from './task-workflow.js?v=39';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=39';
-import {createTeamUI} from './team-ui.js?v=39'
-import {authGate,openAccount} from './auth-ui.js?v=39'
-import {createDocumentsUI} from './documents.js?v=39';
-import {HQView} from './hq.js?v=39'
-import {LINKS} from './corkboard.js?v=39';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=39';
+import {bindDraft,draftKey} from './drafts.js?v=40';
+import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=40';
+import {createWorkflow} from './task-workflow.js?v=40';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=40';
+import {createTeamUI} from './team-ui.js?v=40'
+import {authGate,openAccount} from './auth-ui.js?v=40'
+import {createDocumentsUI} from './documents.js?v=40';
+import {HQView} from './hq.js?v=40'
+import {LINKS} from './corkboard.js?v=40';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=40';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На проверке'],['done','Готово']];
@@ -128,6 +128,9 @@ function showSaveRecovery(e){if(document.querySelector('#saveRecovery'))return;c
 
 function toast(msg,action){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.innerHTML=`<span>${esc(msg)}</span>${action?'<button>Отменить</button>':''}`;document.body.appendChild(el);if(action)el.querySelector('button').onclick=()=>{action();el.remove()};setTimeout(()=>el.remove(),action?5000:2200)}
 let restoringRoute=false,routeReady=false;
+// Scrolling must never write History: Safari shares a rate limit across push/replace.
+const routeScroll=new Map();
+const routeState=()=>({hq:true,scroll:0,entry:crypto.randomUUID()});
 function updateUrl(replace=false){
   if(restoringRoute)return;
   const q=new URLSearchParams;
@@ -138,11 +141,12 @@ function updateUrl(replace=false){
   if(selectedTaskId)q.set('task',selectedTaskId);else if(selectedProjectId)q.set('focus',selectedProjectId);
   if(view==='docs')documentsUI.writeRoute(q);
   const url=location.pathname+location.search+(q.size?'#'+q:'');
-  if(!routeReady){history.replaceState({hq:true,scroll:0},'',url);routeReady=true;}
-  else if(url!==location.pathname+location.search+location.hash)history[replace?'replaceState':'pushState']({hq:true,scroll:0},'',url);
+  if(!routeReady){history.replaceState(routeState(),'',url);routeReady=true;}
+  else if(url!==location.pathname+location.search+location.hash)history[replace?'replaceState':'pushState'](routeState(),'',url);
 }
 function restoreRoute(){
   restoringRoute=true;
+  const savedScroll=routeScroll.get(history.state?.entry)??history.state?.scroll??0;
   const q=new URLSearchParams(location.hash.slice(1));
   view=['home','mine','list','kanban','calendar','board','hq','people','problems','docs','integrations','notifications','archive','awaiting'].includes(q.get('view'))?q.get('view'):'home';
   if(view==='docs'&&!isAdmin())view='home';
@@ -152,10 +156,10 @@ function restoreRoute(){
   selectedProjectId=!selectedTaskId&&state.projects.some(p=>p.id===q.get('focus'))?q.get('focus'):null;
   if(isWorkView(view)&&view!=='board')lastWorkView=view;
   documentsUI.restoreRoute(q);renderAll(true);restoringRoute=false;
-  requestAnimationFrame(()=>{const area=document.querySelector('#main .main-scroll');if(area)area.scrollTop=history.state?.scroll||0;});
+  requestAnimationFrame(()=>{const area=document.querySelector('#main .main-scroll');if(area)area.scrollTop=savedScroll;});
 }
 addEventListener('popstate',restoreRoute);
-document.addEventListener('scroll',e=>{if(!restoringRoute&&e.target.matches?.('#main .main-scroll'))history.replaceState({...history.state,scroll:e.target.scrollTop},'');},true);
+document.addEventListener('scroll',e=>{if(!restoringRoute&&e.target.matches?.('#main .main-scroll')){const entry=history.state?.entry;if(entry){routeScroll.set(entry,e.target.scrollTop);if(routeScroll.size>200)routeScroll.delete(routeScroll.keys().next().value);}}},true);
 async function setView(next){if(isWorkView(next)&&next!=='board')lastWorkView=next;if(next==='board'&&dirty){clearTimeout(saveTimer);try{await persist();dirty=false;}catch(e){showSaveRecovery(e);return;}}if(next==='docs'&&!isAdmin())return;if(view==='docs'&&next!=='docs'){try{await documentsUI.flush();}catch(e){toast(e.message);return;}}view=next;if(next==='home')workflow.resetHome();if(!isWorkView(next)){selectedTaskId=null;selectedProjectId=null;}document.querySelectorAll('.view-tabs [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));document.querySelector('[data-place=work]')?.classList.toggle('active',isWorkView(view));renderMain();renderInspector();updateUrl()}
 
 const criticalPath=p=>projectSchedule(p).chain;
