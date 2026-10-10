@@ -102,7 +102,7 @@ export const PARTY_KINDS = { org: 'Организация', ip: 'ИП', npd: 'С
 // Who is the party and how it is introduced in the preamble.
 export function partyPreamble(p, role) {
   if (p.kind === 'ip') { const g = p.gender || personGender(p.fio); return `Индивидуальный предприниматель ${p.fio}, ${END.acting[g]} на основании ОГРНИП ${p.ogrn}, ${END.named[g]} в дальнейшем «${role}»`; }
-  if (p.kind === 'npd') { const g = p.gender || personGender(p.fio); return `${g === 'f' ? 'Гражданка' : 'Гражданин'} ${p.fio}, ${END.registered[g]} в качестве налогоплательщика налога на профессиональный доход от ${shortDate(p.npdDate)} № ${p.npdNumber}, ${END.named[g]} в дальнейшем «${role}»`; }
+  if (p.kind === 'npd') { const g = 'm'; return `Самозанятый ${p.fio}, ${END.registered[g]} в качестве налогоплательщика налога на профессиональный доход от ${shortDate(p.npdDate)} № ${p.npdNumber}, ${END.named[g]} в дальнейшем «${role}»`; }
   if (p.kind === 'person') { const g = p.gender || personGender(p.fio); return `${g === 'f' ? 'Гражданка' : 'Гражданин'} Российской Федерации ${p.fio}, паспорт ${p.passport}, ${END.named[g]} в дальнейшем «${role}»`; }
   const og = orgGender(p.name), sg = p.signerGender || personGender(p.signer);
   return `${p.name}, в лице ${p.signerPositionGen || positionGenitive(p.signerPosition)} ${p.signerGen || fioGenitive(p.signer, sg)}, ${END.actingGen[sg]} на основании ${p.basis || 'устава'}, ${END.named[og]} в дальнейшем «${role}»`;
@@ -209,7 +209,7 @@ export function unzipStored(buf) {
 }
 
 // Word output uses the original, anonymized Office packages.
-export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue } from './docx-templates.js?v=40';
+export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue } from './docx-templates.js?v=41';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------
