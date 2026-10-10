@@ -256,9 +256,10 @@ if __name__ == '__main__':
         'invoice-ip':next(source.glob('*Счет*Шейлан*')),
     }
     for name,path in samples.items():
+        if not name.startswith('invoice'): continue
         files=load(path)
         files=prepare_invoice(files) if name.startswith('invoice') else prepare_contract(files,name)
         save(name+'.docx',files)
     save('act.docx',prepare_act(load(samples['services'])))
     save('upd.xlsx',prepare_upd(load(next(source.glob('*.xlsx')))))
-    print('Prepared six anonymous DOCX templates and the original UPD form')
+    print('Prepared invoices, act and UPD; contracts use prepare-approved-contract.py')

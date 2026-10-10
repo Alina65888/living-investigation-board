@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=37';
+import * as G from './docgen.js?v=38';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -10,7 +10,6 @@ const cache = new Map();
 export function templateName(kind, deal, executor) {
   if (kind === 'invoice') return executor.kind === 'ip' ? 'invoice-ip' : 'invoice-org';
   if (kind === 'act') return 'act';
-  if (deal.type === 'supply') return executor.kind === 'ip' ? 'supply-ip' : 'supply-org';
   return 'services';
 }
 
@@ -104,34 +103,58 @@ function fill(xmlText, values) {
   });
 }
 
-function fillItems(document, items) {
+function fillItems(document, items, approved=false) {
+  const money=n=>approved?G.money(n).replace(/\u00a0/g,' '):G.money(n);
   const re = /<!--items:\d+:start-->([\s\S]*?)<!--items:\d+:end-->/g;
   const matches = [...document.matchAll(re)];
   if (!matches.length) return document;
   const rows = items.map((it, i) => fill(matches[Math.min(i, matches.length-1)][1], {
     itemNumber: `1.${i+1}`, invoiceItemNumber: String(i+1), itemName: it.name,
     itemDescription: it.description || '', itemFullName: [it.name,it.description].filter(Boolean).join('\n'),
-    itemUnit: it.unit || '', itemQuantity: G.qty(it.qty), itemPrice: G.money(it.price), itemTotal: G.money(it.qty * it.price),
+    itemUnit: it.unit || '', itemQuantity: G.qty(it.qty), itemPrice: money(it.price), itemTotal: money(it.qty * it.price),
   })).join('');
   let first = true;
   return document.replace(re, () => { const result = first ? rows : ''; first = false; return result; });
 }
 
+// The approved wording is specifically for services provided by an NPD taxpayer.
+// Never silently fall back to retired contracts or mislabel another tax status.
+export function contractIssue(deal, customer, executor) {
+  if(deal.type!=='services'||executor?.kind!=='npd'||customer?.kind!=='org')return 'Новый шаблон договора предназначен для услуг самозанятого и заказчика-организации. Для этого типа сделки утвержденного шаблона пока нет.';
+  if(!String(deal.period||'').trim())return 'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.';
+  return '';
+}
+function approvedContractData(deal, customer, executor) {
+  const values=dataFor(deal,customer,executor);
+  const servicePeriod=String(deal.period||'').trim().replace(/^в период\s+/i,'').replace(/ года\.?$/,' г.');
+  return {...values,
+    amountWithWords:G.amountWithWords(G.sumItems(deal.items)).replace(/\u00a0/g,' '),total:G.money(G.sumItems(deal.items)).replace(/\u00a0/g,' '),
+    executorName:executor.fio,npdDate:G.shortDate(executor.npdDate),npdNumber:executor.npdNumber,
+    customerTitle:customer.name,customerShortTitle:customer.shortName||customer.name,
+    customerSignerGen:`${customer.signerPositionGen||G.positionGenitive(customer.signerPosition)} ${customer.signerGen||G.fioGenitive(customer.signer,customer.signerGender||G.personGender(customer.signer))}`,
+    customerBasis:customer.basis||'устава',customerTax:`${digits(customer.inn)}/ ${digits(customer.kpp)}`,
+    serviceSubject:`${String(deal.subject||'').trim()} в период ${servicePeriod.replace(/ г\.$/,' года')}`,
+    servicePeriod,appendixReference:`№ ${deal.number} ${G.longDate(deal.date).replace(/ г\.$/,' года')}`,
+  };
+}
+
 async function generate(kind, deal, customer, executor, buffer) {
+  if(kind==='contract'){const issue=contractIssue(deal,customer,executor);if(issue)throw new Error(issue);}
   const files = G.unzipStored(buffer || await loadTemplate(templateName(kind, deal, executor)));
   if (!files['word/document.xml']) throw new Error('В шаблоне отсутствует документ Word');
-  const values = dataFor(deal, customer, executor);
+  const values = kind==='contract'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
   for (const name of Object.keys(files)) {
     if (!/^word\/(document|header\d+|footer\d+)\.xml$/.test(name)) continue;
     // Fill scalar fields first so user-entered {{braces}} are never evaluated as placeholders.
     let text = decode.decode(files[name]);
+    if(!text.includes('{{')&&!text.includes('<!--items:'))continue;
     const itemRows = [];
     text = text.replace(/<!--items:\d+:start-->[\s\S]*?<!--items:\d+:end-->/g, row => {
       itemRows.push(row); return `<!--item-slot:${itemRows.length-1}-->`;
     });
     text = fill(text, values);
     text = text.replace(/<!--item-slot:(\d+)-->/g, (_, i) => itemRows[+i]);
-    text = fillItems(text, deal.items);
+    text = fillItems(text, deal.items,kind==='contract');
     // Repeated rows need fresh paragraph identities; this metadata has no visual effect.
     let paragraphId = 0;
     text = text.replace(/w14:paraId="[A-Fa-f0-9]+"/g, () => `w14:paraId="${(++paragraphId).toString(16).padStart(8,'0')}"`);
