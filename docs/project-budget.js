@@ -1,6 +1,6 @@
 // Budget values are planning data; copying into a deal never changes the source.
-import * as G from './docgen.js?v=52';
-import {dealYear} from './document-library.js?v=52';
+import * as G from './docgen.js?v=53';
+import {dealYear} from './document-library.js?v=53';
 export const BUDGET_FORMATS={
  competition:{title:'Конкурсная процедура',heading:'Смета по конкурсной процедуре',sections:['Оплата труда','Страховые взносы','Командировочные расходы','Закупка непроизведенных активов, нематериальных активов, материальных запасов и основных средств','Уплата налогов, сборов и иных платежей в бюджеты бюджетной системы Российской Федерации','Закупка работ и услуг','Иные расходы']},
  subsidy:{title:'Субсидия',heading:'Смета расходов',sections:['Оплата труда привлеченных специалистов','Аренда и приобретение оборудования и расходных материалов','Услуги по содействию в организации мероприятия','Издательские, полиграфические и сопутствующие расходы']}
@@ -13,6 +13,7 @@ export function budgetIssues(e){
  if(!/^\d{4}$/.test(String(e.year)))errors.push('Укажите год проекта.');
  if(!e.items?.length)errors.push('Добавьте хотя бы одну позицию сметы.');
  for(const [n,i] of (e.items||[]).entries()){
+  if(i.sourceConflict&&!i.sourceConflict.resolved)errors.push(`Позиция ${n+1}: уточните расхождение цены и суммы в исходной смете.`);
   if(!String(i.name||'').trim())errors.push(`Позиция ${n+1}: укажите наименование.`);
   if(!String(i.unit||'').trim())errors.push(`Позиция ${n+1}: укажите единицу измерения.`);
   if(!Number.isInteger(+i.section)||+i.section<0||+i.section>=budgetFormat(e).sections.length)errors.push(`Позиция ${n+1}: выберите раздел сметы.`);
