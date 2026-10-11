@@ -1,6 +1,6 @@
 // UI regression tests with synthetic team API responses. No production data or accounts.
 // npm install --no-save playwright && npx playwright install chromium
-// node test/journeys.browser.mjs
+// node test/contract-download.browser.mjs
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile, mkdir} from 'node:fs/promises';
@@ -30,9 +30,9 @@ if(shotDir)await mkdir(shotDir,{recursive:true});
 const team=[{name:'Руководитель Тест',email:'boss@example.test',role:'admin',active:true},{name:'Анна Тест',email:'anna@example.test',role:'member',active:true}];
 const date=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});
 function fixture(){const task=(id,title,extra={})=>({id,title,projectId:'p1',stageId:'s1',status:'doing',dueDate:date,assignee:team[1].name,lead:team[1].name,assigneeEmail:team[1].email,assigneeEmails:[team[1].email],checklist:[],progress:30,priority:'medium',...extra});return {organizations:[{id:'o1',name:'Тестовое пространство'}],projects:[{id:'p1',orgId:'o1',name:'Форум',owner:team[0].name},{id:'p2',orgId:'o1',name:'Выставка'}],stages:[{id:'s1',projectId:'p1',name:'Подготовка',order:1}],tasks:[task('simple','Позвонить на площадку'),task('review','Подготовить договор',{requiresReview:true}),task('approval','Проверить программу',{status:'approval',requiresReview:true,result:{text:'Программа подготовлена',url:'https://example.test/result',fileIds:[]}}),task('inbox','Распределить поручение',{projectId:'',assignee:'',assigneeEmail:'',assigneeEmails:[]}),task('later','Дальняя задача',{dueDate:'2099-01-01'})],relations:[],events:[],milestones:[],meta:{demo:false}};}
-async function setup(role='admin',width=1440){
+async function setup(role='admin',width=1440,kind='ip',type='supply'){
   const context=await browser.newContext({viewport:{width,height:960},timezoneId:'Europe/Moscow'}),page=await context.newPage();
-  let data=fixture(),revision=1,docs={parties:[{...org,id:'customer',own:true},{...npd,id:'executor',kind:'ip',ogrn:'12345678901234'+String(12345678901234n%13n%10n)}],deals:[{id:'contract-test',customerId:'customer',executorId:'executor',type:'services',number:'7',date:'2026-10-01',deadline:'2026-10-31',subject:'Услуги',period:'с 1 по 31 октября 2026 г.',items:[{name:'Услуги',unit:'услуга',qty:1,price:1000}]}],version:1},docRevision=0;
+  let data=fixture(),revision=1,docs={parties:[{...org,id:'customer',own:true},{...(kind==='org'?org:npd),id:'executor',kind,inn:kind==='org'?'1653001805':npd.inn,ogrn:kind==='org'?org.ogrn:'12345678901234'+String(12345678901234n%13n%10n)}],deals:[{id:'contract-test',customerId:'customer',executorId:'executor',type,number:'7',date:'2026-10-01',deadline:'2026-10-31',subject:'Услуги',period:'с 1 по 31 октября 2026 г.',items:[{name:'Услуги',unit:'услуга',qty:1,price:1000}]}],version:1},docRevision=0;
   const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',response:'Реквизиты будут утром',created_at:new Date().toISOString()}];
   page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
@@ -70,37 +70,54 @@ async function waitForSaved(page){await page.waitForFunction(()=>!document.query
 
 
 try{
- const a=await setup('admin',390),p=a.page;
- assert.deepEqual(G.checkDeal(a.docs().deals[0],a.docs().parties[0],a.docs().parties[1]),[],'valid requisites must not hide template incompatibility');
- await p.locator('[data-view="docs"]').click();
- await p.locator('[data-deal="contract-test"]').click();
- await p.locator('[data-step="3"]').click();
- await p.locator('.docs-contract-issue').getByText(/Исполнитель указан как «ИП»/).waitFor();
- if(shotDir){await p.locator('.docs-contract-issue').scrollIntoViewIfNeeded();await p.screenshot({path:resolve(shotDir,'contract-blocked-mobile.png')});}
- assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
- assert.equal(await p.locator('[data-step-hint]').textContent(),'Договор пока недоступен');
- assert.equal(await p.locator('[data-checks] .ok').count(),0);
- assert.equal(await p.locator('[data-make="contract"]').count(),0);
- assert.equal(await p.locator('[data-make="invoice"]').isEnabled(),true);
- assert.equal(await p.locator('[data-make="upd"]').isEnabled(),true);
- await p.locator('[data-fix-contract]').click();
- await p.locator('[data-kind="ip"].active').waitFor();
- // Correct the status of this synthetic party and verify the supported path.
- await p.locator('[data-kind="npd"]').click();
- await p.locator('[data-back]').click();
+ for(const kind of ['ip','org']){
+  const a=await setup('admin',390,kind),p=a.page;
+  assert.deepEqual(G.checkDeal(a.docs().deals[0],a.docs().parties[0],a.docs().parties[1]),[]);
+  await p.locator('[data-view="docs"]').click();
+  await p.locator('[data-deal="contract-test"]').click();
+  await p.locator('[data-step="2"]').click();
+  assert.match(await p.locator('[data-template-terms]').textContent(),/15 рабочих дней/);
+  await p.locator('[data-step="3"]').click();
+  assert.equal(await p.locator('[data-step-hint]').textContent(),'Можно скачивать');
+  assert.equal(await p.locator('[data-make="contract"]').isEnabled(),true);
+  assert.equal(await p.locator('[data-make="invoice"]').isEnabled(),true);
+  assert.equal(await p.locator('[data-make="upd"]').isEnabled(),true);
+  assert.match(await p.locator('[data-download-template]').textContent(),kind==='ip'?/Поставка — ИП/:/Поставка — организация/);
+  await p.locator('[data-make="contract"]').evaluate(e=>e.scrollIntoView({block:'center'}));
+  assert.equal(await p.locator('[data-make="contract"]').evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true,'download button must not be covered by the footer');
+  if(shotDir){await p.screenshot({path:resolve(shotDir,'contract-'+kind+'-mobile.png')});}
+  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const pending=p.waitForEvent('download');await p.locator('[data-make="contract"]').click();
+  const download=await pending;assert.equal(await download.failure(),null);
+  assert.match(download.suggestedFilename(),/Договор.*\.docx$/);
+  const files=G.unzipStored(Uint8Array.from(await readFile(await download.path())).buffer);
+  const xml=new TextDecoder().decode(files['word/document.xml']);
+  assert.match(xml,/поставки № 7/);assert.doesNotMatch(xml,/Налог на профессиональный доход/);
+  // An existing service deal is never silently relabelled as supply.
+  await p.locator('[data-step="2"]').click();await p.locator('[data-type="services"]').click();
+  await p.locator('[data-step="3"]').click();
+  assert.equal(await p.locator('[data-fix-contract]').textContent(),'Проверить тип сделки');
+  await p.locator('[data-fix-contract]').click();
+  assert.equal(await p.locator('[data-type="services"].active').isVisible(),true);
+  assert.equal(a.docs().parties[1].kind,kind);
+  assert.deepEqual(a.errors,[]);await a.context.close();
+ }
+ const a=await setup('admin',390,'npd','services'),p=a.page;
+ await p.locator('[data-view="docs"]').click();await p.locator('[data-deal="contract-test"]').click();
  await p.locator('[data-step="2"]').click();
- await p.locator('[data-f="period"]').fill('');
- await p.locator('[data-step="3"]').click();
+ assert.match(await p.locator('[data-template-terms]').textContent(),/15 календарных дней/);
+ await p.locator('[data-f="period"]').fill('');await p.locator('[data-step="3"]').click();
  assert.equal(await p.locator('[data-fix-contract]').textContent(),'Указать период услуг');
  await p.locator('[data-fix-contract]').click();
- assert.equal(await p.locator('[data-f="period"]').isVisible(),true);
  assert.equal(await p.locator('[data-f="period"]').evaluate(e=>e===document.activeElement),true);
  await p.locator('[data-f="period"]').fill('с 1 по 31 октября 2026 г.');
  await p.locator('[data-step="3"]').click();
- assert.equal(await p.locator('[data-step-hint]').textContent(),'Можно скачивать');
+ assert.equal(await p.locator('[data-make="invoice"]').count(),0);
  const pending=p.waitForEvent('download');await p.locator('[data-make="contract"]').click();
  const download=await pending;assert.equal(await download.failure(),null);
- assert.deepEqual(a.errors,[]);
- console.log('PASS download availability: valid IP blocked with action, period recovery, NPD download');
- await a.context.close();
+ const files=G.unzipStored(Uint8Array.from(await readFile(await download.path())).buffer);
+ const xml=new TextDecoder().decode(files['word/document.xml']);
+ assert.match(xml,/Самозанятый/);assert.doesNotMatch(xml,/Гражданка/);
+ assert.deepEqual(a.errors,[]);await a.context.close();
+ console.log('PASS mobile downloads: IP supply, organisation supply, NPD services; explicit type and period recovery');
 }finally{await browser.close();await new Promise(r=>server.close(r));}

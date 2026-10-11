@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=41';
+import * as G from './docgen.js?v=42';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -10,7 +10,16 @@ const cache = new Map();
 export function templateName(kind, deal, executor) {
   if (kind === 'invoice') return executor.kind === 'ip' ? 'invoice-ip' : 'invoice-org';
   if (kind === 'act') return 'act';
-  return 'services';
+  if (deal.type === 'services' && executor?.kind === 'npd') return 'services';
+  if (deal.type === 'supply' && ['ip', 'org'].includes(executor?.kind)) return 'supply-' + executor.kind;
+  return null;
+}
+
+export function contractTemplateInfo(deal, executor) {
+  const name = templateName('contract', deal, executor);
+  if (name === 'services') return {title:'Услуги — самозанятый', payment:'Оплата 100% в течение 15 календарных дней после подписания Акта об оказании услуг.'};
+  if (name?.startsWith('supply-')) return {title:'Поставка — ' + (executor.kind === 'ip' ? 'ИП' : 'организация (ООО, НКО)'), payment:'Оплата 100% в течение 15 рабочих дней после подписания Акта об исполнении обязательств и/или УПД.'};
+  return null;
 }
 
 async function loadTemplate(name) {
@@ -117,14 +126,15 @@ function fillItems(document, items, approved=false) {
   return document.replace(re, () => { const result = first ? rows : ''; first = false; return result; });
 }
 
-// The approved wording is specifically for services provided by an NPD taxpayer.
-// Never silently fall back to retired contracts or mislabel another tax status.
+// Select from all supplied references. Never substitute a different deal or tax status.
 export function contractAvailability(deal, customer, executor) {
   if(!customer||!executor)return {message:'Выберите заказчика и исполнителя.',step:1,field:!customer?'customerId':'executorId',action:'Выбрать стороны'};
-  if(executor.kind!=='npd')return {message:`Исполнитель указан как «${G.PARTY_KINDS[executor.kind]||executor.kind}». Новый шаблон договора предназначен для самозанятого. Для ИП, организации или физлица без НПД нужен соответствующий шаблон. Проверьте статус в карточке; меняйте его только если он указан неверно.`,step:1,party:'executorId',action:'Проверить статус исполнителя'};
-  if(customer.kind!=='org')return {message:'Новый шаблон договора предназначен для заказчика-организации. Проверьте карточку заказчика.',step:1,party:'customerId',action:'Проверить заказчика'};
-  if(deal.type!=='services')return {message:`Выбран тип сделки «${G.DEAL_TYPES[deal.type]?.short||deal.type}». Новый шаблон договора предназначен для услуг. Для поставки или подряда нужен соответствующий шаблон.`,step:2,field:'type',action:'Проверить тип сделки'};
-  if(!String(deal.period||'').trim())return {message:'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.',step:2,field:'period',action:'Указать период услуг'};
+  if(customer.kind!=='org')return {message:'В предоставленных образцах заказчик — организация. Проверьте карточку заказчика.',step:1,party:'customerId',action:'Проверить заказчика'};
+  if(!templateName('contract',deal,executor)){
+    const commercial=['ip','org'].includes(executor.kind);
+    return {message:commercial?`Для ${executor.kind==='ip'?'ИП':'организаций'} подключен ваш договор поставки. Сейчас выбрано «${G.DEAL_TYPES[deal.type]?.short||deal.type}». Если покупаете товары, выберите «Поставка». Для услуг или подряда нужен отдельный образец с этим типом сделки; статус контрагента менять не нужно.`:executor.kind==='npd'?'Для самозанятого подключен ваш договор услуг. Проверьте тип сделки; для другого предмета нужен соответствующий образец.':'Среди предоставленных образцов нет договора с физлицом без статуса ИП или НПД. Проверьте карточку контрагента.',step:commercial||executor.kind==='npd'?2:1,...(commercial||executor.kind==='npd'?{field:'type'}:{party:'executorId'}),action:commercial||executor.kind==='npd'?'Проверить тип сделки':'Проверить контрагента'};
+  }
+  if(executor.kind==='npd'&&!String(deal.period||'').trim())return {message:'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.',step:2,field:'period',action:'Указать период услуг'};
   return null;
 }
 export function contractIssue(deal, customer, executor) {
@@ -148,7 +158,7 @@ async function generate(kind, deal, customer, executor, buffer) {
   if(kind==='contract'){const issue=contractIssue(deal,customer,executor);if(issue)throw new Error(issue);}
   const files = G.unzipStored(buffer || await loadTemplate(templateName(kind, deal, executor)));
   if (!files['word/document.xml']) throw new Error('В шаблоне отсутствует документ Word');
-  const values = kind==='contract'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
+  const values = kind==='contract'&&executor.kind==='npd'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
   for (const name of Object.keys(files)) {
     if (!/^word\/(document|header\d+|footer\d+)\.xml$/.test(name)) continue;
     // Fill scalar fields first so user-entered {{braces}} are never evaluated as placeholders.
