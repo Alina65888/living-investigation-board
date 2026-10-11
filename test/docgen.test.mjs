@@ -83,7 +83,7 @@ test('Word repeats styled rows, escapes user text and keeps separate invoice fie
   const items=Array.from({length:12},(_,i)=>({...deal.items[0],name:`Позиция ${i+1} <&> {{total}}`,qty:1,price:10.01}));
   const d={...deal,invoiceNumber:'12/2',invoiceDate:'2026-05-02',items};
   const result=await word('invoice',d),document=text(result['word/document.xml']);
-  assert.match(document,/№ 12\/2 от 2 мая 2026 г/);
+  assert.match(document,/№ 12\/2 от 02 мая 2026 г/);
   assert.match(document,/Договор поставки № 7 от 28.04.2026/);
   assert.match(document,/Позиция 12 &lt;&amp;&gt; \{\{total\}\}/);
   assert.match(document,/120,12/);
@@ -122,7 +122,7 @@ test('UPD preserves the approved style package, expands rows, descriptions and c
 });
 
 test('all template packages are anonymous; no original signers or bank details remain', () => {
-  for(const name of ['services.docx','services-business.docx','supply-ip.docx','supply-org.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
+  for(const name of ['services.docx','services-business.docx','supply-ip.docx','supply-org.docx','invoice-org.docx','invoice-ip.docx','act.docx','act-npd.docx','upd.xlsx']) {
     const files=G.unzipStored(bufferOf('../docs/templates/'+name));
     const xml=Object.entries(files).filter(([name])=>name.endsWith('.xml')).map(([,v])=>text(v)).join('');
     const visible=[...xml.matchAll(/<(?:w:)?t(?:\s[^>]*)?>([^<]*)<\//g)].map(m=>m[1]).join(' ');
@@ -212,7 +212,7 @@ test('IP and organisations can provide services as well as goods, with matching 
     assert.match(plain,/3.4. На сумму предоплаты или аванса проценты/);
     assert.match(plain,/3.5. В случае несвоевременного исполнения/);
     assert.doesNotMatch(plain,/6.4. Разногласия|поставляемого|Срок оказания поставки/);
-    assert.match(plain,/с 1 по 20 мая 2026 г./);
+    assert.match(plain,/с 01 по 20 мая 2026 г./);
     assert.match(plain,/Срок оказания услуг: 20 мая 2026 г./);
     assert.match(G.contractTemplateInfo(d,e).payment,/15 рабочих дней.*Акта об исполнении обязательств и\/или УПД/);
     assert.match(plain,executor.kind==='ip'?/ОГРНИП/:/ИНН \/ КПП/);
@@ -258,4 +258,49 @@ test('invoice quantity and unit values match their column headings for IP and or
     const cells=[...row.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map(m=>m[0].replace(/<[^>]*>/g,''));
     assert.equal(cells[2],'3');assert.equal(cells[3],'час');
   }
+});
+
+test('single-digit days are padded in headings and free-text periods, without changing quantities', async()=>{
+  assert.equal(G.longDate('2026-03-01'),'01 марта 2026 г.');
+  assert.equal(G.longDate('2026-03-09'),'09 марта 2026 г.');
+  assert.equal(G.longDate('2026-03-20'),'20 марта 2026 г.');
+  for(const [from,to] of [['с 1 по 9 марта 2026 г.','с 01 по 09 марта 2026 г.'],['с 8 марта по 2 апреля 2026 года','с 08 марта по 02 апреля 2026 года'],['с 01 по 09 марта','с 01 по 09 марта'],['25 часов, 9-го числа, 1 услуга','25 часов, 9-го числа, 1 услуга']])assert.equal(G.padDateDays(from),to);
+  const d={...deal,type:'services',date:'2026-03-01',actDate:'2026-03-09',subject:'руководителя проекта',period:'с 1 по 9 марта 2026 г.'};
+  for(const kind of ['contract','act']){
+    const doc=text((await word(kind,d,ngo,npd))['word/document.xml']);
+    assert.match(doc,/01 марта 2026/);assert.match(doc,/с 01 по 09 марта 2026/);
+  }
+});
+
+test('NPD uses the new separate act, explicit title break and conditional payment statement', async()=>{
+  const customer={...ngo,name:'Региональная молодежная общественная организация «Пример»'},d={...deal,type:'services',period:'с 28 апреля по 20 мая 2026 г.'};
+  assert.equal(G.templateName('act',d,npd),'act-npd');
+  for(const paid of [false,true]){
+    const doc=text((await word('act',{...d,paid},customer,npd))['word/document.xml']);
+    assert.match(doc,/об исполнении обязательств по <\/w:t><w:br[^>]*\/><w:t[^>]*>Договору оказания услуг № 7 от 28 апреля 2026 года/);
+    assert.match(doc,/РМОО «Пример»/);assert.match(doc,/Самозанятый Смирнова Елена Олеговна/);
+    assert.doesNotMatch(doc,/Гражданин|Гражданка|27\.11\.2028/);
+    assert.match(doc,/27\.11\.2018/);
+    if(paid)assert.match(doc,/Оплачена Заказчиком в полном объеме/);
+    else{assert.doesNotMatch(doc,/Оплачена Заказчиком|Обязательства Заказчика .* выполнены/);assert.match(doc,/Договором и Спецификацией/);}
+    assert.match(doc,/действующей на основании устава, именуемая/);
+  }
+  assert.equal(G.templateName('act',d,org),'act','business acts retain their separate layout');
+  assert.equal(G.partyShortTitle(customer),'РМОО «Пример»');
+  assert.equal(G.partyShortTitle({...customer,shortName:'Другое сокращение'}),'Другое сокращение');
+  assert.equal(G.partyShortTitle(org),org.name);
+  const doc=text((await word('contract',d,customer,npd))['word/document.xml']);
+  assert.ok(doc.includes(customer.name));assert.match(doc,/РМОО «Пример»/);
+});
+
+test('service wording uses an editable form without altering specification names',async()=>{
+  assert.equal(G.serviceForm('Руководитель проекта'),'руководителя проекта');
+  assert.equal(G.serviceForm('Ведущий мероприятия'),'ведущего мероприятия');
+  assert.equal(G.serviceForm('Фотограф'),'фотографа');
+  assert.equal(G.serviceForm('Неизвестное название'),'');
+  const items=[{name:'Руководитель проекта',contractName:'',description:'Координация',unit:'услуга',qty:1,price:1000},{name:'Дизайн',contractName:'разработки макетов',unit:'услуга',qty:1,price:500}];
+  const subject=G.serviceSubjectFromItems(items);assert.equal(subject,'руководителя проекта, разработки макетов');
+  const doc=text((await word('contract',{...deal,type:'services',subject,period:'с 1 по 9 марта 2026 г.',items},ngo,npd))['word/document.xml']);
+  assert.match(doc,/оказать услугу: руководителя проекта, разработки макетов/);
+  assert.match(doc,/>Руководитель проекта</);assert.match(doc,/>Дизайн</);
 });
