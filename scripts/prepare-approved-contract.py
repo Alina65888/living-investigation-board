@@ -24,7 +24,7 @@ def build(source,out):
     tok=lambda i,key:replace(ps[i],text(ps[i]).strip(),'{{'+key+'}}')
     for i,key in {1:'contractTitle',2:'city',3:'date',47:'customerShortTitle',51:'customerRegistration',53:'executorRegistration',55:'customerAddress',57:'executorAddress',59:'customerTax',61:'executorTax',63:'customerAccount',65:'executorAccount',67:'customerBank',69:'executorBank',71:'customerCorr',73:'executorCorr',75:'customerBik',77:'executorBik',79:'customerPosition',82:'executorName',88:'appendixReference',102:'itemName',103:'itemDescription',104:'itemUnit',105:'itemQuantity',106:'itemPrice',107:'itemTotal',110:'total',115:'customerPosition',118:'executorName'}.items():tok(i,key)
     # Keep bold names and normal preamble tails in their original runs.
-    p=ps[4];s=text(p);replace(p,s.split(',')[0][len('Гражданин '):],'{{executorName}}')
+    p=ps[4];s=text(p);replace(p,s.split(',')[0][len('Гражданин '):],'{{executorName}}');replace(p,'Гражданин','Самозанятый')
     s=text(p);replace(p,s.split('доход от ')[1].split(' №')[0],'{{npdDate}}');s=text(p);replace(p,s.split(' № ')[1].split(',')[0],'{{npdNumber}}')
     p=ps[5];s=text(p);replace(p,s.split(', в лице ')[0],'{{customerTitle}}');s=text(p);replace(p,s.split(', в лице ')[1].split(', действующего')[0],'{{customerSignerGen}}');s=text(p);replace(p,s.split('на основании ')[1].split(', именуемый')[0],'{{customerBasis}}')
     p=ps[9];s=text(p);replace(p,s.split('оказать услугу: ')[1].split(', а Заказчик')[0],'{{serviceSubject}}')

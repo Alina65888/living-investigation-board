@@ -1,6 +1,6 @@
-import {bindDraft,draftKey,saveDraft,loadDraft,clearDraft} from './drafts.js?v=40';
-import {nextStep,groupMyTasks,weekTasks} from './task-guidance.js?v=40';
-import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js?v=40';
+import {bindDraft,draftKey,saveDraft,loadDraft,clearDraft} from './drafts.js?v=41';
+import {nextStep,groupMyTasks,weekTasks} from './task-guidance.js?v=41';
+import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js?v=41';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={planned:'Запланирована',doing:'В работе',blocked:'Нужна помощь',approval:'На проверке',done:'Готово'};
 const day=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});

@@ -399,3 +399,7 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 @media(max-width:760px){.work-tools>div{left:0;right:auto}.my-task .my-body{grid-row:1}.my-task .wf-complete{grid-row:2}.my-task>.team-badge{grid-row:2;justify-self:start}}
 /* Daily journeys: clear input and stable controls. */
 .auth-password-toggle{justify-self:start;margin-top:6px;padding:4px 0;border:0;background:none;color:var(--accent,#27664f);font:inherit;font-size:13px;text-decoration:underline;cursor:pointer}.auth-password-toggle:focus-visible{outline:2px solid currentColor;outline-offset:4px}.quick-editor{flex-basis:100%}.wf-entry p{overflow-wrap:anywhere}.my-task [data-help-task]{white-space:normal}
+
+.docs-contract-issue{flex-basis:100%;width:100%;min-width:0;padding:14px;border-radius:14px;background:#fff3da}
+.docs-contract-issue p{margin:8px 0;overflow-wrap:anywhere}
+.docs-contract-issue .btn{white-space:normal;text-align:left}

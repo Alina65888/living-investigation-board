@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=40';
+import * as G from './docgen.js?v=41';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -119,10 +119,16 @@ function fillItems(document, items, approved=false) {
 
 // The approved wording is specifically for services provided by an NPD taxpayer.
 // Never silently fall back to retired contracts or mislabel another tax status.
+export function contractAvailability(deal, customer, executor) {
+  if(!customer||!executor)return {message:'Выберите заказчика и исполнителя.',step:1,field:!customer?'customerId':'executorId',action:'Выбрать стороны'};
+  if(executor.kind!=='npd')return {message:`Исполнитель указан как «${G.PARTY_KINDS[executor.kind]||executor.kind}». Новый шаблон договора предназначен для самозанятого. Для ИП, организации или физлица без НПД нужен соответствующий шаблон. Проверьте статус в карточке; меняйте его только если он указан неверно.`,step:1,party:'executorId',action:'Проверить статус исполнителя'};
+  if(customer.kind!=='org')return {message:'Новый шаблон договора предназначен для заказчика-организации. Проверьте карточку заказчика.',step:1,party:'customerId',action:'Проверить заказчика'};
+  if(deal.type!=='services')return {message:`Выбран тип сделки «${G.DEAL_TYPES[deal.type]?.short||deal.type}». Новый шаблон договора предназначен для услуг. Для поставки или подряда нужен соответствующий шаблон.`,step:2,field:'type',action:'Проверить тип сделки'};
+  if(!String(deal.period||'').trim())return {message:'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.',step:2,field:'period',action:'Указать период услуг'};
+  return null;
+}
 export function contractIssue(deal, customer, executor) {
-  if(deal.type!=='services'||executor?.kind!=='npd'||customer?.kind!=='org')return 'Новый шаблон договора предназначен для услуг самозанятого и заказчика-организации. Для этого типа сделки утвержденного шаблона пока нет.';
-  if(!String(deal.period||'').trim())return 'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.';
-  return '';
+  return contractAvailability(deal,customer,executor)?.message||'';
 }
 function approvedContractData(deal, customer, executor) {
   const values=dataFor(deal,customer,executor);

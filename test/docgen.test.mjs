@@ -19,7 +19,8 @@ const npd = { kind: 'npd', fio: 'Смирнова Елена Олеговна', 
 test('preamble words agree with the organisation and the signatory', () => {
   assert.equal(G.partyPreamble(org, 'Исполнитель'), 'Общество с ограниченной ответственностью «Пример», в лице генерального директора Иванова Петра Сергеевича, действующего на основании устава, именуемое в дальнейшем «Исполнитель»');
   assert.match(G.partyPreamble(ngo, 'Заказчик'), /в лице председателя Петровой Анны Ильиничны, действующей на основании устава, именуемая/);
-  assert.match(G.partyPreamble(npd, 'Исполнитель'), /^Гражданка Смирнова Елена Олеговна, зарегистрированная .* именуемая/);
+  assert.match(G.partyPreamble(npd, 'Исполнитель'), /^Самозанятый Смирнова Елена Олеговна, зарегистрированный .* именуемый/);
+  for(const gender of ['f','m'])assert.match(G.partyPreamble({...npd,gender},'Исполнитель'),/^Самозанятый .* зарегистрированный .* именуемый/);
   assert.equal(G.fioGenitive('Сабирова Лиля Ринатовна'), 'Сабировой Лили Ринатовны');
   assert.equal(G.fioGenitive('Соколов Сергей Владимирович'), 'Соколова Сергея Владимировича');
   assert.equal(G.initials('Соколов Сергей Владимирович'), 'С. В. Соколов');
@@ -151,6 +152,8 @@ test('only the new service contract is used, with fixed approved terms and repea
   assert.match(document,/15 \(Пятнадцати\) календарных дней/);
   assert.match(document,/подписания Акта об оказании услуг/);
   assert.match(document,/Налог на профессиональный доход/);
+  assert.match(document,/Самозанятый/);
+  assert.doesNotMatch(document,/Гражданин|Гражданка/);
   assert.match(document,/4.1. Исполнитель обязуется передать сведения/);
   assert.match(document,/1.2/);assert.match(document,/Другая услуга &lt;&amp;&gt;/);
   assert.doesNotMatch(document,/99.*рабочих|\{\{\w+\}\}|<!--items:/);

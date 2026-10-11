@@ -1,7 +1,7 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=40';
-import * as G from './docgen.js?v=40';
-import {DEFAULT_FOLDERS,dealYear,documentFilename} from './document-library.js?v=40';
+import {loadDocs,saveDocs} from './workspace-store.js?v=41';
+import * as G from './docgen.js?v=41';
+import {DEFAULT_FOLDERS,dealYear,documentFilename} from './document-library.js?v=41';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -132,10 +132,21 @@ export function createDocumentsUI(ctx){
     const changed=(save=true)=>{if(save){d.updatedAt=new Date().toISOString();persist();}const c=party(d.customerId),e=party(d.executorId),total=G.sumItems(d.items);
       main.querySelector('[data-total]').textContent=`Итого: ${G.money(total)} ₽${e?' · '+G.vatLine(total,e):''}`;
       main.querySelector('[data-exec-note]').textContent=e?`${G.PARTY_KINDS[e.kind]}: ${KIND_HINT[e.kind]}.`:'';
-      const w=G.checkDeal(d,c,e);main.querySelector('[data-step-hint]').textContent=step===3?(w.filter(x=>!/черновик|НДФЛ/.test(x)).length?'Проверьте замечания перед скачиванием':'Можно скачивать'):`Шаг ${step} из 3 · изменения сохраняются автоматически`;main.querySelector('[data-checks]').innerHTML=w.map(x=>`<li class="${/черновик|НДФЛ/.test(x)?'info':'warn'}">${esc(x)}</li>`).join('')||'<li class="ok">Всё проверено: реквизиты, суммы и даты сходятся.</li>';
-      const issue=c&&e?G.contractIssue(d,c,e):'';const set=G.documentSet(e);main.querySelector('[data-out]').innerHTML=set.length&&c?set.map(s=>`<button class="btn ${s.id==='contract'?'primary':''}" data-make="${s.id}" ${s.id==='contract'&&issue?'disabled':''}>${s.title} <small>.${s.ext}</small></button>`).join(''):'<p class="home-empty">Выберите заказчика и исполнителя.</p>';
-      if(set.length&&c){const preview=document.createElement('div');preview.className='docs-filenames';preview.innerHTML='<h3>Названия при скачивании</h3>'+set.map(x=>'<p>'+esc(documentFilename(x.id,d,e,fileProject(d)))+'</p>').join('');main.querySelector('[data-out]').append(preview);}
-      if(issue&&set.length&&c){const note=document.createElement('p');note.className='docs-note';note.textContent=issue;main.querySelector('[data-out]').append(note);}
+      const w=G.checkDeal(d,c,e),availability=G.contractAvailability(d,c,e),issue=availability?.message||'';
+      const checks=issue?['Договор пока недоступен. Причина и следующий шаг — в блоке «Скачать».',...w]:w;
+      main.querySelector('[data-step-hint]').textContent=step===3?(issue?'Договор пока недоступен':w.filter(x=>!/черновик|НДФЛ/.test(x)).length?'Проверьте замечания перед скачиванием':'Можно скачивать'):`Шаг ${step} из 3 · изменения сохраняются автоматически`;
+      main.querySelector('[data-checks]').innerHTML=checks.map(x=>`<li class="${/черновик|НДФЛ/.test(x)?'info':'warn'}">${esc(x)}</li>`).join('')||'<li class="ok">Все проверено: реквизиты, суммы и даты сходятся.</li>';
+      const set=G.documentSet(e);
+      main.querySelector('[data-out]').innerHTML=set.length&&c?
+        (issue?`<div class="docs-contract-issue" role="status"><b>Договор пока недоступен</b><p>${esc(issue)}</p><button class="btn" data-fix-contract>${esc(availability.action)}</button></div>`:'')+
+        set.filter(s=>s.id!=='contract'||!issue).map(s=>`<button class="btn ${s.id==='contract'?'primary':''}" data-make="${s.id}">${s.title} <small>.${s.ext}</small></button>`).join(''):
+        '<p class="home-empty">Выберите заказчика и исполнителя.</p>';
+      if(set.length&&c){const preview=document.createElement('div');preview.className='docs-filenames';preview.innerHTML='<h3>Названия при скачивании</h3>'+set.filter(x=>x.id!=='contract'||!issue).map(x=>'<p>'+esc(documentFilename(x.id,d,e,fileProject(d)))+'</p>').join('');main.querySelector('[data-out]').append(preview);}
+      main.querySelector('[data-fix-contract]')?.addEventListener('click',()=>{
+        if(availability.party){editing={kind:'party',id:d[availability.party],returnTo:id};renderParty(main,editing.id);return;}
+        editing.step=availability.step;renderDeal(main,id);
+        const target=main.querySelector(availability.field==='type'?'[data-type]':`[data-f="${availability.field}"]`);target?.scrollIntoView({block:'center'});target?.focus();
+      });
       main.querySelectorAll('[data-make]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await flush();await make(b.dataset.make,structuredClone(d),structuredClone(c),structuredClone(e),w)}catch(e){ctx.toast(e.message);}finally{b.disabled=false}})};
     main.querySelectorAll('[data-f]').forEach(el=>el.oninput=()=>{d[el.dataset.f]=el.type==='number'?+el.value:el.value;if(el.dataset.f==='projectId'){d.taskId='';persist();renderDeal(main,id);return;}if(el.dataset.f==='subject')main.querySelector('h1').textContent=d.subject||'Новая сделка';changed()});
     main.querySelectorAll('select[data-f]').forEach(el=>el.onchange=el.oninput);
