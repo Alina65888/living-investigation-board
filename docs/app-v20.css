@@ -256,6 +256,7 @@ button,input,select,textarea{font-family:var(--ib-sans)!important}
 .docs-card em{font:700 12px var(--ib-sans);font-style:normal;padding:3px 8px;border-radius:999px}
 .docs-form h2,.docs-check h2,.docs-out h2,.docs-preview h2{margin:0 0 12px;font-size:18px!important}
 .docs-seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.docs-seg.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .docs-seg.three{grid-template-columns:repeat(3,minmax(0,1fr))}
 .docs-seg button{display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:12px;border:1.5px solid var(--line2);border-radius:12px;background:var(--panel);text-align:left;cursor:pointer;color:var(--text)}
 .docs-seg button b{font:700 15px var(--ib-sans)}
@@ -291,7 +292,7 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 @media (max-width:760px){
   .docs-row{grid-template-columns:1fr auto;gap:6px 10px}
   .docs-row .docs-type{grid-column:1/-1}
-  .docs-seg,.docs-seg.three,.docs-grid{grid-template-columns:1fr}
+  .docs-seg,.docs-seg.two,.docs-seg.three,.docs-grid{grid-template-columns:1fr}
   .docs-item{grid-template-columns:1fr 1fr;padding:10px;border:1px solid var(--line);border-radius:10px}
   .docs-item.head{display:none}
   .docs-item input[data-it="name"],.docs-item input[data-it="description"]{grid-column:1/-1}

@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=42';
+import * as G from './docgen.js?v=43';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -7,19 +7,27 @@ const cap = s => s ? s[0].toUpperCase() + s.slice(1) : '';
 const digits = s => String(s ?? '').replace(/\D/g, '');
 const cache = new Map();
 
+// Transaction type and legal status are independent. One service layout handles
+// both business statuses; dynamic party fields provide their different requisites.
+const CONTRACT_TEMPLATES = {
+  services: {npd:'services', ip:'services-business', org:'services-business'},
+  supply: {ip:'supply-ip', org:'supply-org'},
+};
+const paymentTerms = type => type === 'services'
+  ? 'в течение 15 (Пятнадцати) календарных дней с момента подписания Акта об оказании услуг'
+  : 'в течение 15 (Пятнадцати) рабочих дней с момента подписания Акта об исполнении обязательств и/или УПД';
+
 export function templateName(kind, deal, executor) {
   if (kind === 'invoice') return executor.kind === 'ip' ? 'invoice-ip' : 'invoice-org';
   if (kind === 'act') return 'act';
-  if (deal.type === 'services' && executor?.kind === 'npd') return 'services';
-  if (deal.type === 'supply' && ['ip', 'org'].includes(executor?.kind)) return 'supply-' + executor.kind;
-  return null;
+  return CONTRACT_TEMPLATES[deal.type]?.[executor?.kind] || null;
 }
 
 export function contractTemplateInfo(deal, executor) {
   const name = templateName('contract', deal, executor);
-  if (name === 'services') return {title:'Услуги — самозанятый', payment:'Оплата 100% в течение 15 календарных дней после подписания Акта об оказании услуг.'};
-  if (name?.startsWith('supply-')) return {title:'Поставка — ' + (executor.kind === 'ip' ? 'ИП' : 'организация (ООО, НКО)'), payment:'Оплата 100% в течение 15 рабочих дней после подписания Акта об исполнении обязательств и/или УПД.'};
-  return null;
+  if (!name) return null;
+  const status = {npd:'самозанятый', ip:'ИП', org:'организация (ООО, НКО)'}[executor.kind];
+  return {title:G.DEAL_TYPES[deal.type].short+' — '+status, payment:'Оплата 100% '+paymentTerms(deal.type).replace(' (Пятнадцати)','')+'.'};
 }
 
 async function loadTemplate(name) {
@@ -43,7 +51,7 @@ function partyData(p, side, role, tail) {
   const preamble = G.partyPreamble(p, role);
   const lead = personal ? preamble.slice(0, preamble.indexOf(',')) : title;
   const fields = {
-    Title: title, ShortTitle: p.shortName || title, Role: role, RoleColon: role + ':',
+    Title: title, ShortTitle: p.kind === 'org' ? p.shortName || title : title, Role: role, RoleColon: role + ':',
     HeadTitle: p.kind === 'ip' ? 'Индивидуальный предприниматель' : title,
     HeadName: p.kind === 'ip' ? p.fio : '',
     PreambleName: lead, PreambleTail: preamble.slice(lead.length) + ', ' + tail,
@@ -62,11 +70,11 @@ function partyData(p, side, role, tail) {
 }
 
 function dataFor(deal, customer, executor) {
-  const t = G.DEAL_TYPES[deal.type], total = G.sumItems(deal.items), days = deal.payDays || 15;
+  const t = G.DEAL_TYPES[deal.type], total = G.sumItems(deal.items);
   const period = deal.period ? ' ' + deal.period : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
   const customerBy = deal.type === 'supply' ? 'Покупателем' : 'Заказчиком';
   const executorBy = deal.type === 'supply' ? 'Поставщиком' : deal.type === 'works' ? 'Подрядчиком' : 'Исполнителем';
-  const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в течение ${days} (${cap(G.numberWords(days))}) рабочих дней с момента подписания Акта об исполнении обязательств${executor.kind === 'org' || executor.kind === 'ip' ? ' и/или УПД' : ''}.`;
+  const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты ${paymentTerms(deal.type)}.`;
   const subject = deal.type === 'supply'
     ? `1.1. Поставщик обязуется поставить в течение срока действия Договора Товары по заданию Покупателя согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Покупатель в случае отсутствия мотивированных возражений обязуется принять и оплатить Товар.`
     : `1.1. ${t.exec} обязуется по заданию Заказчика ${t.verb} ${t.objAcc} согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Заказчик в случае отсутствия мотивированных возражений обязуется принять и оплатить ${t.objAcc}.`;
@@ -86,7 +94,7 @@ function dataFor(deal, customer, executor) {
     totalLabel: G.vatPayer(executor) ? 'ИТОГО с НДС:' : executor.kind === 'npd' ? 'ИТОГО:' : 'ИТОГО без НДС:', total: G.money(total),
     appendixPayment: `Порядок расчетов: оплата производится ${customerBy} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в соответствии с п. 3.2 Договора.`,
     appendixTotal: `Общая стоимость настоящего Приложения составляет: ${G.amountWithWords(total)} ${G.vatLine(total, executor)}`,
-    deadline: deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : '',
+    deadline: deal.type==='services'&&deal.period ? `${t.term}: ${deal.period}` : deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : '',
     invoiceTitle: `Счет на оплату № ${deal.invoiceNumber || deal.number} от ${G.longDate(deal.invoiceDate || deal.date)}`,
     invoiceExecutor: `${G.partyTitle(executor)}, ИНН: ${digits(executor.inn)}`,
     invoiceCustomer: `${G.partyTitle(customer)}, ИНН: ${digits(customer.inn)}`,
@@ -132,7 +140,7 @@ export function contractAvailability(deal, customer, executor) {
   if(customer.kind!=='org')return {message:'В предоставленных образцах заказчик — организация. Проверьте карточку заказчика.',step:1,party:'customerId',action:'Проверить заказчика'};
   if(!templateName('contract',deal,executor)){
     const commercial=['ip','org'].includes(executor.kind);
-    return {message:commercial?`Для ${executor.kind==='ip'?'ИП':'организаций'} подключен ваш договор поставки. Сейчас выбрано «${G.DEAL_TYPES[deal.type]?.short||deal.type}». Если покупаете товары, выберите «Поставка». Для услуг или подряда нужен отдельный образец с этим типом сделки; статус контрагента менять не нужно.`:executor.kind==='npd'?'Для самозанятого подключен ваш договор услуг. Проверьте тип сделки; для другого предмета нужен соответствующий образец.':'Среди предоставленных образцов нет договора с физлицом без статуса ИП или НПД. Проверьте карточку контрагента.',step:commercial||executor.kind==='npd'?2:1,...(commercial||executor.kind==='npd'?{field:'type'}:{party:'executorId'}),action:commercial||executor.kind==='npd'?'Проверить тип сделки':'Проверить контрагента'};
+    return {message:commercial?'Для ИП и организаций доступны договоры услуг и поставки. Сейчас выбран другой тип сделки. Выберите подходящий предмет на шаге 2; статус контрагента менять не нужно.':executor.kind==='npd'?'Для самозанятого подключен ваш договор услуг. Проверьте тип сделки; для другого предмета нужен соответствующий образец.':'Среди предоставленных образцов нет договора с физлицом без статуса ИП или НПД. Проверьте карточку контрагента.',step:commercial||executor.kind==='npd'?2:1,...(commercial||executor.kind==='npd'?{field:'type'}:{party:'executorId'}),action:commercial||executor.kind==='npd'?'Проверить тип сделки':'Проверить контрагента'};
   }
   if(executor.kind==='npd'&&!String(deal.period||'').trim())return {message:'Укажите период оказания услуг, например: с 20 сентября по 31 октября 2026 г.',step:2,field:'period',action:'Указать период услуг'};
   return null;

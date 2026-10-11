@@ -93,12 +93,33 @@ try{
   const files=G.unzipStored(Uint8Array.from(await readFile(await download.path())).buffer);
   const xml=new TextDecoder().decode(files['word/document.xml']);
   assert.match(xml,/поставки № 7/);assert.doesNotMatch(xml,/Налог на профессиональный доход/);
-  // An existing service deal is never silently relabelled as supply.
+  // Both types remain available for this same counterparty. Changing type must
+  // update contract, invoice, act and UPD without changing requisites or items.
   await p.locator('[data-step="2"]').click();await p.locator('[data-type="services"]').click();
+  assert.equal(await p.locator('[data-type="works"]').count(),0);
+  assert.match(await p.locator('[data-template-terms]').textContent(),/15 календарных дней/);
   await p.locator('[data-step="3"]').click();
-  assert.equal(await p.locator('[data-fix-contract]').textContent(),'Проверить тип сделки');
-  await p.locator('[data-fix-contract]').click();
-  assert.equal(await p.locator('[data-type="services"].active').isVisible(),true);
+  assert.equal(await p.locator('[data-fix-contract]').count(),0);
+  assert.match(await p.locator('[data-download-template]').textContent(),kind==='ip'?/Услуги — ИП/:/Услуги — организация/);
+  for(const document of ['contract','invoice','act','upd']){
+    const pending=p.waitForEvent('download');await p.locator(`[data-make="${document}"]`).click();
+    const file=await pending;assert.equal(await file.failure(),null);
+    const parts=G.unzipStored(Uint8Array.from(await readFile(await file.path())).buffer);
+    const text=new TextDecoder().decode(parts[document==='upd'?'xl/worksheets/sheet1.xml':'word/document.xml']);
+    assert.match(text,/оказания услуг/);
+    assert.doesNotMatch(text,/профессиональный доход|Самозанятый|Паспорт/);
+  }
+  assert.equal(a.docs().parties[1].kind,kind);
+  assert.equal(a.docs().deals[0].type,'services');
+  const savedItems=structuredClone(a.docs().deals[0].items);
+  await p.reload();await p.locator('[data-step="2"]').click();
+  assert.equal(await p.locator('[data-type="services"].active').count(),1);
+  await p.locator('[data-type="supply"]').click();await p.locator('[data-step="3"]').click();
+  const back=p.waitForEvent('download');await p.locator('[data-make="contract"]').click();
+  const backFile=await back;assert.equal(await backFile.failure(),null);
+  const backParts=G.unzipStored(Uint8Array.from(await readFile(await backFile.path())).buffer);
+  assert.match(new TextDecoder().decode(backParts['word/document.xml']),/поставки № 7/);
+  assert.deepEqual(a.docs().deals[0].items,savedItems);
   assert.equal(a.docs().parties[1].kind,kind);
   assert.deepEqual(a.errors,[]);await a.context.close();
  }
@@ -119,5 +140,5 @@ try{
  const xml=new TextDecoder().decode(files['word/document.xml']);
  assert.match(xml,/Самозанятый/);assert.doesNotMatch(xml,/Гражданка/);
  assert.deepEqual(a.errors,[]);await a.context.close();
- console.log('PASS mobile downloads: IP supply, organisation supply, NPD services; explicit type and period recovery');
+ console.log('PASS mobile downloads: IP and organisation services/supply, supporting files, reload and type switching, NPD services');
 }finally{await browser.close();await new Promise(r=>server.close(r));}
