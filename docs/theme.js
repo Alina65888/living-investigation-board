@@ -59,6 +59,19 @@ function picker() {
   return wrap;
 }
 
+// Accent swatches for the phone menu (the header button is hidden on narrow screens).
+export function accentMenu() {
+  const cur = document.documentElement.dataset.accent;
+  return `<div class="accent-menu"><b>Цвет оформления</b><div class="accent-grid">${ACCENTS.map(([id, name, c]) => `<button type="button" data-accent-pick="${id}" aria-checked="${id === cur}"><i style="background:${c}"></i>${name}</button>`).join('')}</div></div>`;
+}
+export function bindAccentMenu(root) {
+  root.querySelectorAll('.accent-menu [data-accent-pick]').forEach(b => b.onclick = () => {
+    const id = applyAccent(b.dataset.accentPick); write(id);
+    root.querySelectorAll('.accent-menu [data-accent-pick]').forEach(x => x.setAttribute('aria-checked', String(x.dataset.accentPick === id)));
+    toastPill(`Цвет: ${ACCENTS.find(a => a[0] === id)[1]}`);
+  });
+}
+
 // Numbers count up and cards rise in only when a page is opened, not on every small re-render.
 function countUp(root) {
   if (reduced()) return;
