@@ -342,3 +342,19 @@ html[data-accent=honey] .wf-done:hover{color:#8a6100!important}
   .wf-row>.team-badge.st-approval:not(:last-of-type){display:none!important}
   .wf-row>.quick-editor{grid-area:edit}
 }
+
+/* Side bar: risk counters stay on one line next to wrapped project names */
+.project-link{gap:10px!important;align-items:center}
+.project-link>span:first-child{min-width:0;flex:1 1 auto;overflow-wrap:anywhere}
+.count-pill{flex:none!important;white-space:nowrap!important;display:inline-flex!important;align-items:center;gap:3px;padding:3px 8px!important;line-height:1.2!important;background:rgba(24,24,27,.06)!important;color:var(--muted)!important;font:600 12px var(--ib-sans)!important}
+
+/* Team directory: roomier cards, emails on one line, badges inside the card */
+.team-directory-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))!important;gap:14px!important}
+.team-mini{background:#fff!important;border:1px solid rgba(0,0,0,.05)!important;border-radius:18px!important;padding:18px!important;gap:8px!important;min-width:0}
+.team-mini>b{font:650 15.5px/1.3 var(--ib-sans)!important;color:var(--ink)!important;overflow-wrap:anywhere}
+.team-mini>small{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)!important;font-size:13px!important}
+.team-mini .team-badge{max-width:100%;white-space:normal!important;line-height:1.25!important;text-align:left}
+.team-mini .btn{margin-top:auto}
+.team-note{background:var(--panel2)!important;color:var(--ink-2)!important;border-radius:14px!important}
+.team-mini .team-badge{background:var(--panel2)!important;color:var(--ink-2)!important}
+.team-mini .team-badge.is-admin{background:var(--acc-soft)!important;color:var(--ink)!important}
