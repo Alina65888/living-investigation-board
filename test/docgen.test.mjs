@@ -57,7 +57,7 @@ test('Word fills approved templates and preserves styles, fonts, margins and ban
     for (const type of ['supply','services','works']) {
       const d={...deal,type,period:'с 28 апреля по 20 мая 2026 г.'};
       for (const kind of ['contract','invoice','act']) {
-        if(kind==='contract'&&!G.templateName(kind,d,executor)){await assert.rejects(()=>G.contractDocx(d,ngo,executor),/образец/);continue;}
+        if(kind==='contract'&&!G.templateName(kind,d,executor)){await assert.rejects(()=>G.contractDocx(d,ngo,executor),/образец|другой тип/);continue;}
         const result=await word(kind,d,ngo,executor);
         const source=G.unzipStored(template(kind,d,executor));
         const document=text(result['word/document.xml']);
@@ -122,7 +122,7 @@ test('UPD preserves the approved style package, expands rows, descriptions and c
 });
 
 test('all template packages are anonymous; no original signers or bank details remain', () => {
-  for(const name of ['services.docx','supply-ip.docx','supply-org.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
+  for(const name of ['services.docx','services-business.docx','supply-ip.docx','supply-org.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
     const files=G.unzipStored(bufferOf('../docs/templates/'+name));
     const xml=Object.entries(files).filter(([name])=>name.endsWith('.xml')).map(([,v])=>text(v)).join('');
     const visible=[...xml.matchAll(/<(?:w:)?t(?:\s[^>]*)?>([^<]*)<\//g)].map(m=>m[1]).join(' ');
@@ -185,11 +185,44 @@ test('supplied IP and organisation contracts use their own supply template and f
 
 test('unsupported combinations direct to deal type without changing the counterparty status', () => {
   for(const executor of [org,{...npd,kind:'ip'}]) {
-    const d={...deal,type:'services'},issue=G.contractAvailability(d,ngo,executor);
+    const d={...deal,type:'works'},issue=G.contractAvailability(d,ngo,executor);
     assert.equal(G.templateName('contract',d,executor),null);
     assert.equal(issue.field,'type');assert.equal(issue.party,undefined);
     assert.match(issue.message,/статус контрагента менять не нужно/);
   }
   assert.equal(G.contractAvailability(deal,ngo,npd).field,'type');
   assert.equal(G.contractAvailability(deal,{...ngo,kind:'ip'},org).party,'customerId');
+});
+
+
+test('IP and organisations can provide services as well as goods, with matching supporting documents', async () => {
+  for(const executor of [org,{...npd,kind:'ip',ogrn:'123456789012345'}])for(const vat of [false,true]) {
+    const e={...executor,vat,vatRate:10,...(executor.kind==='ip'?{shortName:'Старое название организации'}:{})};
+    const d={...deal,type:'services',payDays:99,period:'с 1 по 20 мая 2026 г.',subject:'сопровождение мероприятия',items:[{name:'Услуги ведущего',description:'Открытие и награждение',unit:'услуга',qty:1,price:10000}]};
+    assert.equal(G.contractAvailability(d,ngo,e),null);
+    assert.equal(G.templateName('contract',d,e),'services-business');
+    const output=await word('contract',d,ngo,e),xml=text(output['word/document.xml']);
+    const plain=xml.replace(/<[^>]*>/g,'');
+    assert.match(plain,/оказания услуг № 7/);
+    assert.match(plain,/Заказчик/);assert.match(plain,/Исполнитель/);
+    assert.doesNotMatch(plain,/Покупатель|Поставщик|Товар|Самозанятый|Гражданка|Паспорт|НПД|профессиональный доход|99 \(/);
+    assert.match(plain,/15 \(Пятнадцати\) календарных дней/);
+    assert.match(plain,/Срок оказания услуг: с 1 по 20 мая 2026 г./);
+    assert.match(plain,executor.kind==='ip'?/ОГРНИП/:/ИНН \/ КПП/);
+    assert.ok(plain.includes(e.ogrn));
+    assert.doesNotMatch(plain,/Старое название организации/);
+    assert.match(plain,vat?/В том числе НДС 10%/:/НДС не облагается/);
+    assert.match(plain,/Открытие и награждение/);
+    assert.doesNotMatch(xml,/<!--items:|\{\{\w+\}\}/);
+    for(const key of Object.keys(output).filter(k=>k!=='word/document.xml'))assert.deepEqual(output[key],G.unzipStored(template('contract',d,e))[key]);
+    const invoice=text((await word('invoice',d,ngo,e))['word/document.xml']);
+    const act=text((await word('act',d,ngo,e))['word/document.xml']);
+    assert.match(invoice,/Договор оказания услуг № 7/);
+    assert.match(act,/Договору оказания услуг № 7/);
+    assert.doesNotMatch(act,/Поставщик|Покупатель|НПД/);
+    const upd=G.unzipStored(await G.updXlsx(bufferOf('../docs/templates/upd.xlsx'),d,ngo,e).arrayBuffer());
+    assert.match(text(upd['xl/worksheets/sheet1.xml']),/Договор оказания услуг № 7/);
+    assert.equal(G.templateName('contract',{...d,type:'supply'},e),'supply-'+e.kind);
+    assert.equal(G.templateName('contract',d,e),'services-business');
+  }
 });
