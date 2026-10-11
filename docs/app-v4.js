@@ -1,14 +1,14 @@
-import {bindDraft,draftKey} from './drafts.js?v=53';
-import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=53';
-import {createWorkflow} from './task-workflow.js?v=53';
-import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=53';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=53';
-import {createTeamUI} from './team-ui.js?v=53'
-import {authGate,openAccount} from './auth-ui.js?v=53'
-import {createDocumentsUI} from './documents.js?v=53';
-import {HQView} from './hq.js?v=53'
-import {LINKS} from './corkboard.js?v=53';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=53';
+import {bindDraft,draftKey} from './drafts.js?v=54';
+import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=54';
+import {createWorkflow} from './task-workflow.js?v=54';
+import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=54';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=54';
+import {createTeamUI} from './team-ui.js?v=54'
+import {authGate,openAccount} from './auth-ui.js?v=54'
+import {createDocumentsUI} from './documents.js?v=54';
+import {HQView} from './hq.js?v=54'
+import {LINKS} from './corkboard.js?v=54';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=54';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На проверке'],['done','Готово']];

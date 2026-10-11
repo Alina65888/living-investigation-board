@@ -1,8 +1,8 @@
-import * as G from './docgen.js?v=53';
-import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=53';
-import {estimateDocx,registryDocx} from './project-docx.js?v=53';
-import {projectCode,projectDocumentFilename} from './document-library.js?v=53';
-import {resolveSourcePrice} from './pearl-budget.js?v=53';
+import * as G from './docgen.js?v=54';
+import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=54';
+import {estimateDocx,registryDocx} from './project-docx.js?v=54';
+import {projectCode,projectDocumentFilename} from './document-library.js?v=54';
+import {resolveSourcePrice} from './pearl-budget.js?v=54';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const units=['услуга','штука','комплект','набор','час','день','месяц','поездка','экземпляр','рубль'];
 const field=(e,key,label,type='text')=>`<label class="field"><span>${label}</span><input data-budget-field="${key}" type="${type}" value="${esc(e[key]||'')}"></label>`;
@@ -18,7 +18,7 @@ export function renderProjectBudget(main,{estimate:e,folder,data,view='estimate'
  <label class="field"><span>Вид сметы</span><select data-budget-format>${Object.entries(BUDGET_FORMATS).map(([k,v])=>`<option value="${k}" ${e.format===k?'selected':''}>${v.title}</option>`).join('')}</select></label>${field(e,'heading','Заголовок сметы')}
  <label class="field wide"><span>Подзаголовок сметы субсидии</span><textarea data-budget-field="subtitle" rows="2">${esc(e.subtitle||'')}</textarea></label><label class="field wide"><span>Название проекта в реестре</span><textarea data-budget-field="registryTitle" rows="2">${esc(e.registryTitle||'')}</textarea></label>
  ${field(e,'agreementNumber','Номер соглашения (для приложения)')}${field(e,'agreementDate','Дата соглашения','date')}${field(e,'signerPosition','Должность в подписи (если отличается от карточки)')}${field(e,'signerName','Инициалы и фамилия (если отличаются от карточки)')}
- </div><button class="btn ghost" data-budget-delete>Удалить смету</button></details><div data-budget-summary class="home-panel"></div>${e.sourceTitle?`<p class="docs-note">Загружено из ${esc(e.sourceTitle)}. Заявленный итог: ${G.money(e.sourceTotal)} ₽. Все позиции можно редактировать.</p>`:''}<div data-budget-content></div><p class="docs-warn" data-budget-error hidden role="alert"></p></div>`;
+ </div><button class="btn ghost" data-budget-delete>Удалить смету</button></details><div data-budget-summary class="home-panel"></div><div data-budget-content></div><p class="docs-warn" data-budget-error hidden role="alert"></p></div>`;
  main.querySelector('[data-budget-back]').onclick=back;
  main.querySelector('[data-budget-parties]').onclick=openParties;
  main.querySelector('[data-budget-delete]').onclick=remove;
