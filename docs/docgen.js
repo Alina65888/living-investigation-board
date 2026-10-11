@@ -4,8 +4,16 @@
 
 // ---------- small helpers ----------
 const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-export const longDate = iso => { if (!iso) return '«___» __________ 20__ г.'; const [y, m, d] = iso.split('-').map(Number); return `${d} ${MONTHS[m - 1]} ${y} г.`; };
+export const longDate = iso => { if (!iso) return '«___» __________ 20__ г.'; const [y, m, d] = iso.split('-').map(Number); return `${String(d).padStart(2,'0')} ${MONTHS[m - 1]} ${y} г.`; };
 export const shortDate = iso => iso ? iso.split('-').reverse().join('.') : '';
+// Free-text periods also occur in the subject, appendix and act. Only calendar
+// expressions are changed: quantities, prices and «9-го числа» stay untouched.
+export function padDateDays(value) {
+  const months=MONTHS.join('|');
+  return String(value||'')
+    .replace(new RegExp(`(^|[^\\d])(\\d)(?=\\s+(?:${months})(?:\\s|$|[.,]))`,'gi'),(_,before,day)=>before+'0'+day)
+    .replace(new RegExp(`(^|\\s)(с\\s+)(\\d)(?=\\s+по\\s+\\d{1,2}\\s+(?:${months})(?:\\s|$|[.,]))`,'gi'),(_,before,from,day)=>before+from+'0'+day);
+}
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
 const digits = s => String(s ?? '').replace(/\D/g, '');
 export const money = n => (Math.round((+n || 0) * 100) / 100).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
@@ -108,6 +116,20 @@ export function partyPreamble(p, role) {
   return `${p.name}, в лице ${p.signerPositionGen || positionGenitive(p.signerPosition)} ${p.signerGen || fioGenitive(p.signer, sg)}, ${END.actingGen[sg]} на основании ${p.basis || 'устава'}, ${END.named[og]} в дальнейшем «${role}»`;
 }
 export const partyTitle = p => p.kind === 'org' ? p.name : p.kind === 'ip' ? `Индивидуальный предприниматель ${p.fio}` : p.fio;
+// Use the saved legal short name first. The fallback abbreviates this exact
+// legal form only; it never turns an arbitrary organisation into an РМОО.
+export const partyShortTitle = p => p.kind === 'org'
+  ? String(p.shortName||'').trim() || String(p.name||'').replace(/^Региональная\s+молодежная\s+общественная\s+организация\s+/i,'РМОО ').replace(/^Региональная\s+молодёжная\s+общественная\s+организация\s+/i,'РМОО ')
+  : partyTitle(p);
+
+// Suggestions are intentionally limited to recognised roles/actions. Unknown
+// wording is left for the user instead of being declined by a blanket suffix rule.
+const SERVICE_FORMS = {руководитель:'руководителя',координатор:'координатора',куратор:'куратора',администратор:'администратора',организатор:'организатора',ведущий:'ведущего',фотограф:'фотографа',видеограф:'видеографа',оператор:'оператора',дизайнер:'дизайнера',редактор:'редактора',корректор:'корректора',переводчик:'переводчика',модератор:'модератора',режиссер:'режиссера',режиссёр:'режиссера',звукорежиссер:'звукорежиссера',звукорежиссёр:'звукорежиссера',аренда:'аренды',организация:'организации',проведение:'проведения',изготовление:'изготовления',разработка:'разработки',оформление:'оформления',сопровождение:'сопровождения',доставка:'доставки',монтаж:'монтажа',печать:'печати'};
+export function serviceForm(name) {
+  const value=String(name||'').trim(), match=value.match(/^([а-яё]+)(.*)$/i);
+  return match && SERVICE_FORMS[match[1].toLowerCase()] ? SERVICE_FORMS[match[1].toLowerCase()]+match[2] : '';
+}
+export const serviceSubjectFromItems = items => items.map(it=>String(it.contractName||'').trim()||serviceForm(it.name)).filter(Boolean).join(', ');
 export const vatPayer = p => (p.kind === 'org' || p.kind === 'ip') && !!p.vat;
 export const vatRate = p => vatPayer(p) ? (+p.vatRate || 20) : 0;
 export function vatAmount(total, p) { const r = vatRate(p); return r ? Math.round(total * r / (100 + r) * 100) / 100 : 0; }
@@ -175,7 +197,7 @@ export function checkDeal(deal, customer, executor) {
 
 // ---------- OOXML: zip ----------
 const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
-const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+export const crc32 = b => { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
 const enc = new TextEncoder(), dec = new TextDecoder();
 // Stored (uncompressed) zip — valid for Word/Excel/LibreOffice and tiny to implement.
 export function zip(files) {
@@ -209,7 +231,7 @@ export function unzipStored(buf) {
 }
 
 // Word output uses the original, anonymized Office packages.
-export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=49';
+export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=50';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------

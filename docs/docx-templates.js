@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=49';
+import * as G from './docgen.js?v=50';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -19,7 +19,7 @@ const paymentTerms = (type, executor) => type === 'services' && executor?.kind =
 
 export function templateName(kind, deal, executor) {
   if (kind === 'invoice') return executor.kind === 'ip' ? 'invoice-ip' : 'invoice-org';
-  if (kind === 'act') return 'act';
+  if (kind === 'act') return executor.kind === 'npd' && deal.type === 'services' ? 'act-npd' : 'act';
   return CONTRACT_TEMPLATES[deal.type]?.[executor?.kind] || null;
 }
 
@@ -30,7 +30,7 @@ export function contractTemplateInfo(deal, executor) {
   return {title:G.DEAL_TYPES[deal.type].short+' — '+status, payment:'Оплата 100% '+paymentTerms(deal.type,executor).replace(' (Пятнадцати)','')+'.'};
 }
 
-async function loadTemplate(name) {
+export async function loadTemplate(name) {
   if (!cache.has(name)) {
     const url = new URL(`./templates/${name}.docx`, import.meta.url);
     url.search = new URL(import.meta.url).search;
@@ -51,7 +51,7 @@ function partyData(p, side, role, tail) {
   const preamble = G.partyPreamble(p, role);
   const lead = personal ? preamble.slice(0, preamble.indexOf(',')) : title;
   const fields = {
-    Title: title, ShortTitle: p.kind === 'org' ? p.shortName || title : title, Role: role, RoleColon: role + ':',
+    Title: title, ShortTitle: G.partyShortTitle(p), Role: role, RoleColon: role + ':',
     HeadTitle: p.kind === 'ip' ? 'Индивидуальный предприниматель' : title,
     HeadName: p.kind === 'ip' ? p.fio : '',
     PreambleName: lead, PreambleTail: preamble.slice(lead.length) + ', ' + tail,
@@ -71,7 +71,7 @@ function partyData(p, side, role, tail) {
 
 function dataFor(deal, customer, executor) {
   const t = G.DEAL_TYPES[deal.type], total = G.sumItems(deal.items);
-  const period = deal.period ? ' ' + deal.period : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
+  const period = deal.period ? ' ' + G.padDateDays(deal.period) : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
   const customerBy = deal.type === 'supply' ? 'Покупателем' : 'Заказчиком';
   const executorBy = deal.type === 'supply' ? 'Поставщиком' : deal.type === 'works' ? 'Подрядчиком' : 'Исполнителем';
   const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты ${paymentTerms(deal.type,executor)}.`;
@@ -88,7 +88,7 @@ function dataFor(deal, customer, executor) {
     verbObject: `${t.verb} ${t.objAcc}`, objectQuality: deal.type === 'works' ? 'Работ, выполняемых' : 'Услуг, оказываемых',
     contractTitle: `${t.title} № ${deal.number}`,
     city: /^(г\.|с\.|пос\.|п\.|д\.)\s/.test(deal.city || '') ? deal.city : `г. ${deal.city || 'Казань'}`,
-    date: G.longDate(deal.date), subjectClause: subject, paymentClause: '3.2. ' + payment,
+    date: G.longDate(deal.date), subjectClause: G.padDateDays(subject), paymentClause: '3.2. ' + payment,
     priceLead: `3.1. Стоимость ${t.objGen.toLowerCase()} по настоящему договору составляет: `,
     amountWithWords: G.amountWithWords(total), vatLine: G.vatLine(total, executor),
     appendixContract: `к Договору ${t.title}`, appendixReference: `№ ${deal.number} от ${G.longDate(deal.date)}`,
@@ -96,8 +96,8 @@ function dataFor(deal, customer, executor) {
     totalLabel: G.vatPayer(executor) ? 'ИТОГО с НДС:' : executor.kind === 'npd' ? 'ИТОГО:' : 'ИТОГО без НДС:', total: G.money(total),
     appendixPayment: `Порядок расчетов: оплата производится ${customerBy} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в соответствии с п. 3.2 Договора.`,
     appendixTotal: `Общая стоимость настоящего Приложения составляет: ${G.amountWithWords(total)} ${G.vatLine(total, executor)}`,
-    deadline: deal.type==='services'&&deal.period ? `${t.term}: ${deal.period}` : deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : '',
-    businessServiceDeadline: deal.deadline ? `Срок оказания услуг: ${G.longDate(deal.deadline)}` : deal.period ? `Срок оказания услуг: ${deal.period}` : '',
+    deadline: deal.type==='services'&&deal.period ? `${t.term}: ${G.padDateDays(deal.period)}` : deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : '',
+    businessServiceDeadline: deal.deadline ? `Срок оказания услуг: ${G.longDate(deal.deadline)}` : deal.period ? `Срок оказания услуг: ${G.padDateDays(deal.period)}` : '',
     invoiceTitle: `Счет на оплату № ${deal.invoiceNumber || deal.number} от ${G.longDate(deal.invoiceDate || deal.date)}`,
     invoiceExecutor: `${G.partyTitle(executor)}, ИНН: ${digits(executor.inn)}`,
     invoiceCustomer: `${G.partyTitle(customer)}, ИНН: ${digits(customer.inn)}`,
@@ -106,7 +106,7 @@ function dataFor(deal, customer, executor) {
     invoiceVat: G.vatPayer(executor) ? G.money(G.vatAmount(total, executor)) : '–',
     invoiceCount: `Всего наименований ${deal.items.length} на сумму: ${G.money(total).split(',')[0]} руб. – ${G.money(total).split(',')[1]} коп.`,
     amountWords: G.amountWords(total),
-    actTitle: 'Акт', actReference: `об исполнении обязательств по ${reference}`,
+    actTitle: 'Акт', actReference: `об исполнении обязательств по\n${reference}`, actContractReference: reference,
     actDate: G.longDate(deal.actDate || deal.deadline || deal.date),
     actIntro: 'совместно именуемые «Стороны», составили настоящий акт, в дальнейшем «Акт», о нижеследующем:',
     actDelivery: `1. Обязательства ${t.execGen} по ${reference}${period} выполнены в полном объеме в соответствии с Приложением № 1 – Спецификация № 1.`,
@@ -154,15 +154,23 @@ export function contractIssue(deal, customer, executor) {
 }
 function approvedContractData(deal, customer, executor) {
   const values=dataFor(deal,customer,executor);
-  const servicePeriod=String(deal.period||'').trim().replace(/^в период\s+/i,'').replace(/ года\.?$/,' г.');
+  const servicePeriod=G.padDateDays(deal.period).trim().replace(/^в период\s+/i,'').replace(/ года\.?$/,' г.');
+  const period=servicePeriod?' в период '+servicePeriod.replace(/ г\.$/,' года'):'', reference=values.actContractReference;
+  const amount=G.amountWithWords(G.sumItems(deal.items)).replace(/\u00a0/g,' ');
+  const tax='НДС не облагается в связи с применением Исполнителем специального налогового режима «Налог на профессиональный доход» на основании Федерального закона от 27.11.2018 № 422-ФЗ.';
   return {...values,
-    amountWithWords:G.amountWithWords(G.sumItems(deal.items)).replace(/\u00a0/g,' '),total:G.money(G.sumItems(deal.items)).replace(/\u00a0/g,' '),
+    amountWithWords:amount,total:G.money(G.sumItems(deal.items)).replace(/\u00a0/g,' '),
     executorName:executor.fio,npdDate:G.shortDate(executor.npdDate),npdNumber:executor.npdNumber,
-    customerTitle:customer.name,customerShortTitle:customer.shortName||customer.name,
+    executorNpdTitle:'Самозанятый '+executor.fio,
+    customerTitle:customer.name,customerShortTitle:G.partyShortTitle(customer),
     customerSignerGen:`${customer.signerPositionGen||G.positionGenitive(customer.signerPosition)} ${customer.signerGen||G.fioGenitive(customer.signer,customer.signerGender||G.personGender(customer.signer))}`,
     customerBasis:customer.basis||'устава',customerTax:`${digits(customer.inn)}/ ${digits(customer.kpp)}`,
-    serviceSubject:`${String(deal.subject||'').trim()} в период ${servicePeriod.replace(/ г\.$/,' года')}`,
+    serviceSubject:`${G.padDateDays(deal.subject).trim()}${period}`,
     servicePeriod,appendixReference:`№ ${deal.number} ${G.longDate(deal.date).replace(/ г\.$/,' года')}`,
+    npdActDelivery:`Обязательства Исполнителя по ${reference}${period} выполнены в полном объеме в соответствии с Приложением № 1 – Спецификация № 1;`,
+    npdActPayment:deal.paid
+      ? `Обязательства Заказчика по ${reference}${period} выполнены в полном объеме, оплата составила: ${amount} ${tax} Оплачена Заказчиком в полном объеме;`
+      : `Стоимость услуг по ${reference} составляет: ${amount} ${tax} Оплата производится в порядке, установленном Договором и Спецификацией;`,
   };
 }
 
@@ -170,7 +178,7 @@ async function generate(kind, deal, customer, executor, buffer) {
   if(kind==='contract'){const issue=contractIssue(deal,customer,executor);if(issue)throw new Error(issue);}
   const files = G.unzipStored(buffer || await loadTemplate(templateName(kind, deal, executor)));
   if (!files['word/document.xml']) throw new Error('В шаблоне отсутствует документ Word');
-  const values = kind==='contract'&&executor.kind==='npd'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
+  const values = ['contract','act'].includes(kind)&&executor.kind==='npd'&&deal.type==='services'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
   for (const name of Object.keys(files)) {
     if (!/^word\/(document|header\d+|footer\d+)\.xml$/.test(name)) continue;
     // Fill scalar fields first so user-entered {{braces}} are never evaluated as placeholders.
