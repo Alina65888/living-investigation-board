@@ -1,6 +1,6 @@
 // UI regression tests with synthetic team API responses. No production data or accounts.
 // npm install --no-save playwright && npx playwright install chromium
-// node test/contract-download.browser.mjs
+// node test/npd-templates.browser.mjs
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {readFile, mkdir} from 'node:fs/promises';
@@ -143,4 +143,42 @@ try{
  assert.deepEqual(a.errors,[]);
  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'mobile page must not overflow');
  await a.context.close();console.log('PASS NPD: editable forms, compressed/split Word fields, validation, preview, activation, reload, rollback, contract and act downloads');
+
+ // Each new business reference can be edited, previewed with a compatible deal,
+ // persisted, and used by the real download button (including bank headers).
+ for(const [key,status,type,kind] of [
+  ['supply-ip','ip','supply','contract'],
+  ['services-business','org','services','contract'],
+  ['invoice-ip','ip','supply','invoice'],
+  ['invoice-org','org','services','invoice'],
+ ]){
+  const a=await setup('admin',390,status,type),p=a.page;
+  await p.locator('[data-view="docs"]').click();await p.locator('[data-open-templates]').click();
+  const editable=await readDownload(p,()=>p.locator(`[data-template-download="${key}"]`).click()),files=G.unzipStored(editable);
+  const source=decode(files['word/document.xml']);assert.match(source,/\{\{#items\}\}/);
+  files['word/document.xml']=encode(source.replace('{{date}}','{{da</w:t></w:r><w:r><w:t>te}}').replace('{{invoiceTitle}}','{{invoice</w:t></w:r><w:r><w:t>Title}}').replace('ДОГОВОР','ДОГОВОР ПРОВЕРЕН').replace('{{invoiceTitle}}','{{invoiceTitle}}'));
+  if(kind==='invoice')files['word/header2.xml']=encode(decode(files['word/header2.xml']).replace('Банк получателя','Банк получателя — проверен'));
+  await p.locator(`[data-template-upload="${key}"]`).setInputFiles({name:key+'.docx',mimeType:'application/octet-stream',buffer:compressedWord(files)});
+  await p.locator('[data-template-review]:not([hidden])').waitFor();
+  assert.equal(await p.locator('[data-template-deal] option').count(),2,'only the compatible fixture is available');
+  // The synthetic example must also use the right status and transaction type.
+  const preview=await readDownload(p,()=>p.locator('[data-template-preview]').click());
+  const example=decode(G.unzipStored(preview)['word/document.xml']);assert.doesNotMatch(example,/Самозанятый|Налог на профессиональный доход|\{\{|items:/);
+  assert.match(example,type==='supply'?/поставки/:/оказания услуг/);
+  await p.locator('[data-template-deal]').selectOption('contract-test');assert.equal(await p.locator('[data-template-apply]').isDisabled(),true);
+  await readDownload(p,()=>p.locator('[data-template-preview]').click());await p.locator('[data-template-checked]').check();await p.locator('[data-template-apply]').click();await p.locator('[data-template-review][hidden]').waitFor({state:'attached'});
+  await p.reload();await p.locator(`[data-template-download="${key}"]`).waitFor();assert.equal(a.docs().templates[key].name,key+'.docx');
+  if(kind==='invoice'){
+   const invalid={...files,'word/header2.xml':encode(decode(files['word/header2.xml']).replace('{{executorAccount}}',''))};
+   await p.locator(`[data-template-upload="${key}"]`).setInputFiles({name:'Без счета.docx',mimeType:'application/octet-stream',buffer:compressedWord(invalid)});
+   await p.locator('[data-template-error]:not([hidden])').waitFor();assert.match(await p.locator('[data-template-error]').textContent(),/executorAccount/);
+   assert.equal(a.docs().templates[key].name,key+'.docx');
+  }
+  await p.locator('[data-back]').click();await p.locator('[data-deal=contract-test]').click();await p.locator('[data-step="3"]').click();
+  const actual=G.unzipStored(await readDownload(p,()=>p.locator(`[data-make="${kind}"]`).click()));
+  assert.match(decode(actual[kind==='invoice'?'word/header2.xml':'word/document.xml']),kind==='invoice'?/Банк получателя — проверен/:/ДОГОВОР ПРОВЕРЕН/);
+  assert.doesNotMatch(decode(actual['word/document.xml']),/\{\{|items:/);
+  assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  assert.deepEqual(a.errors,[]);await a.context.close();console.log('PASS business template '+key+': upload, compatible preview, activation, reload and actual download');
+ }
 }finally{await browser.close();await new Promise(r=>server.close(r));}
