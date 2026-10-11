@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=43';
+import * as G from './docgen.js?v=44';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -13,7 +13,7 @@ const CONTRACT_TEMPLATES = {
   services: {npd:'services', ip:'services-business', org:'services-business'},
   supply: {ip:'supply-ip', org:'supply-org'},
 };
-const paymentTerms = type => type === 'services'
+const paymentTerms = (type, executor) => type === 'services' && executor?.kind === 'npd'
   ? 'в течение 15 (Пятнадцати) календарных дней с момента подписания Акта об оказании услуг'
   : 'в течение 15 (Пятнадцати) рабочих дней с момента подписания Акта об исполнении обязательств и/или УПД';
 
@@ -27,7 +27,7 @@ export function contractTemplateInfo(deal, executor) {
   const name = templateName('contract', deal, executor);
   if (!name) return null;
   const status = {npd:'самозанятый', ip:'ИП', org:'организация (ООО, НКО)'}[executor.kind];
-  return {title:G.DEAL_TYPES[deal.type].short+' — '+status, payment:'Оплата 100% '+paymentTerms(deal.type).replace(' (Пятнадцати)','')+'.'};
+  return {title:G.DEAL_TYPES[deal.type].short+' — '+status, payment:'Оплата 100% '+paymentTerms(deal.type,executor).replace(' (Пятнадцати)','')+'.'};
 }
 
 async function loadTemplate(name) {
@@ -74,10 +74,12 @@ function dataFor(deal, customer, executor) {
   const period = deal.period ? ' ' + deal.period : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
   const customerBy = deal.type === 'supply' ? 'Покупателем' : 'Заказчиком';
   const executorBy = deal.type === 'supply' ? 'Поставщиком' : deal.type === 'works' ? 'Подрядчиком' : 'Исполнителем';
-  const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты ${paymentTerms(deal.type)}.`;
+  const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты ${paymentTerms(deal.type,executor)}.`;
   const subject = deal.type === 'supply'
     ? `1.1. Поставщик обязуется поставить в течение срока действия Договора Товары по заданию Покупателя согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Покупатель в случае отсутствия мотивированных возражений обязуется принять и оплатить Товар.`
-    : `1.1. ${t.exec} обязуется по заданию Заказчика ${t.verb} ${t.objAcc} согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Заказчик в случае отсутствия мотивированных возражений обязуется принять и оплатить ${t.objAcc}.`;
+    : deal.type === 'services'
+      ? `1.1. Исполнитель обязуется оказать Услуги в течение срока действия Договора по заданию Заказчика согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Заказчик в случае отсутствия мотивированных возражений обязуется принять и оплатить данную услугу.`
+      : `1.1. ${t.exec} обязуется по заданию Заказчика ${t.verb} ${t.objAcc} согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Заказчик в случае отсутствия мотивированных возражений обязуется принять и оплатить ${t.objAcc}.`;
   return {
     ...partyData(customer, 'customer', t.cust, 'с другой стороны,'),
     ...partyData(executor, 'executor', t.exec, 'с одной стороны, и'),
@@ -95,6 +97,7 @@ function dataFor(deal, customer, executor) {
     appendixPayment: `Порядок расчетов: оплата производится ${customerBy} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в соответствии с п. 3.2 Договора.`,
     appendixTotal: `Общая стоимость настоящего Приложения составляет: ${G.amountWithWords(total)} ${G.vatLine(total, executor)}`,
     deadline: deal.type==='services'&&deal.period ? `${t.term}: ${deal.period}` : deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : '',
+    businessServiceDeadline: deal.deadline ? `Срок оказания услуг: ${G.longDate(deal.deadline)}` : deal.period ? `Срок оказания услуг: ${deal.period}` : '',
     invoiceTitle: `Счет на оплату № ${deal.invoiceNumber || deal.number} от ${G.longDate(deal.invoiceDate || deal.date)}`,
     invoiceExecutor: `${G.partyTitle(executor)}, ИНН: ${digits(executor.inn)}`,
     invoiceCustomer: `${G.partyTitle(customer)}, ИНН: ${digits(customer.inn)}`,
@@ -128,6 +131,7 @@ function fillItems(document, items, approved=false) {
   const rows = items.map((it, i) => fill(matches[Math.min(i, matches.length-1)][1], {
     itemNumber: `1.${i+1}`, invoiceItemNumber: String(i+1), itemName: it.name,
     itemDescription: it.description || '', itemFullName: [it.name,it.description].filter(Boolean).join('\n'),
+    itemInlineDescription: [it.name,it.description].filter(Boolean).join(' '),
     itemUnit: it.unit || '', itemQuantity: G.qty(it.qty), itemPrice: money(it.price), itemTotal: money(it.qty * it.price),
   })).join('');
   let first = true;
