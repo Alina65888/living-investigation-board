@@ -206,8 +206,15 @@ test('IP and organisations can provide services as well as goods, with matching 
     assert.match(plain,/оказания услуг № 7/);
     assert.match(plain,/Заказчик/);assert.match(plain,/Исполнитель/);
     assert.doesNotMatch(plain,/Покупатель|Поставщик|Товар|Самозанятый|Гражданка|Паспорт|НПД|профессиональный доход|99 \(/);
-    assert.match(plain,/15 \(Пятнадцати\) календарных дней/);
-    assert.match(plain,/Срок оказания услуг: с 1 по 20 мая 2026 г./);
+    assert.match(plain,/15 \(Пятнадцати\) рабочих дней/);
+    assert.match(plain,/Акта об исполнении обязательств и\/или УПД/);
+    assert.match(plain,/3.1. Стоимость по Договору согласовывается сторонами в спецификациях/);
+    assert.match(plain,/3.4. На сумму предоплаты или аванса проценты/);
+    assert.match(plain,/3.5. В случае несвоевременного исполнения/);
+    assert.doesNotMatch(plain,/6.4. Разногласия|поставляемого|Срок оказания поставки/);
+    assert.match(plain,/с 1 по 20 мая 2026 г./);
+    assert.match(plain,/Срок оказания услуг: 20 мая 2026 г./);
+    assert.match(G.contractTemplateInfo(d,e).payment,/15 рабочих дней.*Акта об исполнении обязательств и\/или УПД/);
     assert.match(plain,executor.kind==='ip'?/ОГРНИП/:/ИНН \/ КПП/);
     assert.ok(plain.includes(e.ogrn));
     assert.doesNotMatch(plain,/Старое название организации/);
@@ -224,5 +231,31 @@ test('IP and organisations can provide services as well as goods, with matching 
     assert.match(text(upd['xl/worksheets/sheet1.xml']),/Договор оказания услуг № 7/);
     assert.equal(G.templateName('contract',{...d,type:'supply'},e),'supply-'+e.kind);
     assert.equal(G.templateName('contract',d,e),'services-business');
+  }
+});
+
+test('Baylyk services retain the six-column specification with complete descriptions and repeated rows', async () => {
+  for(const count of [4,12]) {
+    const items=Array.from({length:count},(_,i)=>({name:`Услуга ${i+1}.`,description:`Описание ${i+1} <&>`,unit:'час',qty:2,price:100}));
+    const d={...deal,type:'services',period:'с 1 по 20 мая 2026 г.',items};
+    const document=text((await word('contract',d))['word/document.xml']);
+    const tables=[...document.matchAll(/<w:tbl[\s>][\s\S]*?<\/w:tbl>/g)].map(m=>m[0]);
+    const specification=tables.find(t=>t.includes('Наименование'));
+    const rows=[...specification.matchAll(/<w:tr[\s>][\s\S]*?<\/w:tr>/g)].map(m=>m[0]);
+    assert.equal(rows.length,count+2);
+    assert.equal((rows[0].match(/<w:tc[\s>]/g)||[]).length,6);
+    assert.doesNotMatch(rows[0],/>Описание</);
+    for(let i=1;i<=count;i++)assert.ok(document.includes(`Услуга ${i}. Описание ${i} &lt;&amp;&gt;`));
+    assert.match(document,new RegExp(G.money(count*200).replace(/\u00a0/g,'[ \\u00a0]')));
+  }
+});
+
+test('invoice quantity and unit values match their column headings for IP and organisations', async () => {
+  for(const executor of [org,{...npd,kind:'ip'}]){
+    const document=text((await word('invoice',{...deal,items:[{name:'Услуги',unit:'час',qty:3,price:100}]},ngo,executor))['word/document.xml']);
+    const rows=[...document.matchAll(/<w:tr[\s>][\s\S]*?<\/w:tr>/g)].map(m=>m[0]);
+    const row=rows.find(r=>r.includes('Услуги'));
+    const cells=[...row.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map(m=>m[0].replace(/<[^>]*>/g,''));
+    assert.equal(cells[2],'3');assert.equal(cells[3],'час');
   }
 });

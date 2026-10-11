@@ -172,7 +172,13 @@ def prepare_invoice(files):
     token(b[0], 'invoiceTitle')
     for row, key in zip(rows(b[2]), ['invoiceExecutor', 'invoiceCustomer', 'invoiceBasis']): token(cells(row)[1], key)
     rs = rows(b[4]); stop = next(i for i, r in enumerate(rs) if 'ИТОГО' in txt(r))
-    repeat(b[4], 1, stop, ['invoiceItemNumber', 'itemName', 'itemUnit', 'itemQuantity', 'itemPrice', 'itemTotal'])
+    repeat(b[4], 1, stop, ['invoiceItemNumber', 'itemName', 'itemQuantity', 'itemUnit', 'itemPrice', 'itemTotal'])
+    # Preserve the black grid visible in the supplied invoice PDF across Word
+    # renderers, which otherwise resolve mixed neighbour borders differently.
+    for row in rs[:stop+1]:
+        for border in row.xpath('.//w:tcBorders/*', namespaces=NS):
+            for key, value in {'color':'000000', 'val':'single', 'sz':'6'}.items():
+                border.set(E.QName(W, key), value)
     for r in rs[stop:]:
         if 'НДС:' in txt(r):
             token(cells(r)[0], 'invoiceVatLabel'); token(cells(r)[1], 'invoiceVat')

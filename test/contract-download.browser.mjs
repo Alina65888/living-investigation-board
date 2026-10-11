@@ -97,7 +97,7 @@ try{
   // update contract, invoice, act and UPD without changing requisites or items.
   await p.locator('[data-step="2"]').click();await p.locator('[data-type="services"]').click();
   assert.equal(await p.locator('[data-type="works"]').count(),0);
-  assert.match(await p.locator('[data-template-terms]').textContent(),/15 календарных дней/);
+  assert.match(await p.locator('[data-template-terms]').textContent(),/15 рабочих дней.*Акта об исполнении обязательств и\/или УПД/);
   await p.locator('[data-step="3"]').click();
   assert.equal(await p.locator('[data-fix-contract]').count(),0);
   assert.match(await p.locator('[data-download-template]').textContent(),kind==='ip'?/Услуги — ИП/:/Услуги — организация/);
@@ -108,6 +108,10 @@ try{
     const text=new TextDecoder().decode(parts[document==='upd'?'xl/worksheets/sheet1.xml':'word/document.xml']);
     assert.match(text,/оказания услуг/);
     assert.doesNotMatch(text,/профессиональный доход|Самозанятый|Паспорт/);
+    if(document==='contract'){
+      assert.match(text,/15 \(Пятнадцати\) рабочих дней/);
+      assert.match(text,/3.4. На сумму предоплаты или аванса проценты/);
+    }
   }
   assert.equal(a.docs().parties[1].kind,kind);
   assert.equal(a.docs().deals[0].type,'services');
