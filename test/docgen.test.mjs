@@ -57,7 +57,7 @@ test('Word fills approved templates and preserves styles, fonts, margins and ban
     for (const type of ['supply','services','works']) {
       const d={...deal,type,period:'с 28 апреля по 20 мая 2026 г.'};
       for (const kind of ['contract','invoice','act']) {
-        if(kind==='contract'&&(type!=='services'||executor.kind!=='npd')){await assert.rejects(()=>word(kind,d,ngo,executor),/Новый шаблон/);continue;}
+        if(kind==='contract'&&!G.templateName(kind,d,executor)){await assert.rejects(()=>G.contractDocx(d,ngo,executor),/образец/);continue;}
         const result=await word(kind,d,ngo,executor);
         const source=G.unzipStored(template(kind,d,executor));
         const document=text(result['word/document.xml']);
@@ -122,7 +122,7 @@ test('UPD preserves the approved style package, expands rows, descriptions and c
 });
 
 test('all template packages are anonymous; no original signers or bank details remain', () => {
-  for(const name of ['services.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
+  for(const name of ['services.docx','supply-ip.docx','supply-org.docx','invoice-org.docx','invoice-ip.docx','act.docx','upd.xlsx']) {
     const files=G.unzipStored(bufferOf('../docs/templates/'+name));
     const xml=Object.entries(files).filter(([name])=>name.endsWith('.xml')).map(([,v])=>text(v)).join('');
     const visible=[...xml.matchAll(/<(?:w:)?t(?:\s[^>]*)?>([^<]*)<\//g)].map(m=>m[1]).join(' ');
@@ -148,7 +148,7 @@ test('long UPD names wrap without changing fonts', async () => {
 test('only the new service contract is used, with fixed approved terms and repeated rows', async () => {
   const d={...deal,type:'services',period:'с 28 апреля по 20 мая 2026 г.',payDays:99,items:[...deal.items,{name:'Другая услуга <&>',description:'Детали',unit:'час',qty:2,price:100}]};
   const output=await word('contract',d,ngo,npd),document=text(output['word/document.xml']);
-  assert.equal(G.templateName('contract',{...d,type:'supply'},org),'services');
+  assert.equal(G.templateName('contract',d,npd),'services');
   assert.match(document,/15 \(Пятнадцати\) календарных дней/);
   assert.match(document,/подписания Акта об оказании услуг/);
   assert.match(document,/Налог на профессиональный доход/);
@@ -161,4 +161,35 @@ test('only the new service contract is used, with fixed approved terms and repea
   // The original borderless requisites and bordered specification remain distinct.
   const source=G.unzipStored(template('contract',d,npd));
   for(const path of Object.keys(source).filter(p=>p!=='word/document.xml')) assert.deepEqual(output[path],source[path],path);
+});
+
+
+test('supplied IP and organisation contracts use their own supply template and fixed payment terms', async () => {
+  for(const executor of [org,{...npd,kind:'ip',ogrn:'123456789012345'}]) {
+    const d={...deal,payDays:99,period:'',items:[...deal.items,{name:'Товар <&>',description:'Детали {{не поле}}',unit:'штука',qty:2,price:100}]};
+    assert.equal(G.templateName('contract',d,executor),'supply-'+executor.kind);
+    assert.equal(G.contractAvailability(d,ngo,executor),null);
+    const output=await word('contract',d,ngo,executor),document=text(output['word/document.xml']);
+    assert.match(document,/поставки № 7/);
+    assert.match(document,/15 \(Пятнадцати\) рабочих дней/);
+    assert.match(document,/Акта об исполнении обязательств и\/или УПД/);
+    assert.doesNotMatch(document,/Налог на профессиональный доход|Самозанятый|НПД|99 \(/);
+    assert.match(document,/Товар &lt;&amp;&gt;/);
+    assert.match(document,/Детали \{\{не поле\}\}/);
+    assert.match(document,/60[ \u00a0]200/);
+    assert.match(G.contractTemplateInfo(d,executor).payment,/рабочих дней/);
+    const source=G.unzipStored(template('contract',d,executor));
+    for(const path of Object.keys(source).filter(p=>p!=='word/document.xml'))assert.deepEqual(output[path],source[path],path);
+  }
+});
+
+test('unsupported combinations direct to deal type without changing the counterparty status', () => {
+  for(const executor of [org,{...npd,kind:'ip'}]) {
+    const d={...deal,type:'services'},issue=G.contractAvailability(d,ngo,executor);
+    assert.equal(G.templateName('contract',d,executor),null);
+    assert.equal(issue.field,'type');assert.equal(issue.party,undefined);
+    assert.match(issue.message,/статус контрагента менять не нужно/);
+  }
+  assert.equal(G.contractAvailability(deal,ngo,npd).field,'type');
+  assert.equal(G.contractAvailability(deal,{...ngo,kind:'ip'},org).party,'customerId');
 });

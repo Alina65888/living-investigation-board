@@ -363,7 +363,8 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 .docs-footer{position:sticky;bottom:0;z-index:4;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:var(--shadow)}
 .docs-footer span{font-size:13px;color:var(--muted)}
 .docs-footer>div{display:flex;gap:8px;flex-shrink:0}
-.docs-out{position:sticky;bottom:64px;z-index:3;border:1px solid var(--line2)!important}
+.docs-out{position:static;border:1px solid var(--line2)!important}
+.docs-footer-download{position:static}
 .task-documents a{overflow-wrap:anywhere}
 @media(max-width:760px){
   .topbar .journey-menu,.topbar .notification-button{display:inline-flex!important;padding:8px!important}
