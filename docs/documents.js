@@ -1,11 +1,12 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=52';
-import * as G from './docgen.js?v=52';
-import {renderTemplateManager,templateBytes} from './template-editor.js?v=52';
-import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=52';
+import {loadDocs,saveDocs} from './workspace-store.js?v=53';
+import * as G from './docgen.js?v=53';
+import {renderTemplateManager,templateBytes} from './template-editor.js?v=53';
+import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=53';
 
-import {renderProjectBudget} from './project-budget-ui.js?v=52';
-import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=52';
+import {seedPearlBudget} from './pearl-budget.js?v=53';
+import {renderProjectBudget} from './project-budget-ui.js?v=53';
+import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=53';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -22,7 +23,7 @@ export function createDocumentsUI(ctx){
   const visibleDeals=()=>deals().filter(d=>!['all','inbox'].includes(currentProject())?d.projectId===currentProject():true);
   const parties=()=>data.parties,deals=()=>data.deals,party=id=>data.parties.find(p=>p.id===id);
   const title=p=>p?G.partyTitle(p):'—';
-  async function ensure(){if(data)return;if(!loading)loading=loadDocs().then(x=>{data=x||{};data.version=1;data.parties??=[];data.deals??=[];data.folders??=structuredClone(DEFAULT_FOLDERS);data.estimates??=[];fillProjectCodes(data.folders);}).catch(e=>{loadError=e.message;throw e;}).finally(()=>loading=null);await loading;}
+  async function ensure(){if(data)return;if(!loading)loading=loadDocs().then(x=>{data=x||{};data.version=1;data.parties??=[];data.deals??=[];data.folders??=structuredClone(DEFAULT_FOLDERS);data.estimates??=[];fillProjectCodes(data.folders);if(seedPearlBudget(data))persist();}).catch(e=>{loadError=e.message;throw e;}).finally(()=>loading=null);await loading;}
   function saveState(text){document.querySelectorAll('[data-doc-save]').forEach(el=>el.textContent=text);}
   function persist(){dirty=true;saveState('Сохраняем…');clearTimeout(saveTimer);saveTimer=setTimeout(()=>flush().catch(e=>ctx.toast(e.message)),500);}
   async function flush(){
@@ -109,7 +110,7 @@ export function createDocumentsUI(ctx){
   function estimatesList(){
     if(!data.folders.some(f=>f.id===folderId))return '';
     const estimates=data.estimates.filter(e=>e.folderId===folderId&&(!folderYear||String(e.year)===folderYear));
-    return `<section class="home-panel"><div class="home-panel-head"><h2>Смета → договоры → реестр</h2><button class="btn primary" data-new-estimate>Создать смету</button></div><p>Сначала заполните смету. Из ее позиций создайте договоры, затем скачайте реестр.</p>${estimates.map(e=>`<div class="home-panel-head"><button class="btn" data-estimate="${esc(e.id)}">Смета ${esc(e.year)} · ${esc(budgetFormat(e).title)} · ${G.money(G.sumItems(e.items))} ₽</button><button class="btn" data-estimate="${esc(e.id)}" data-estimate-view="register">Реестр</button></div>`).join('')}</section>`;
+    return `<section class="home-panel"><div class="home-panel-head"><h2>Смета → договоры → реестр</h2><button class="btn primary" data-new-estimate>Создать смету</button></div><p>Сначала заполните смету. Из ее позиций создайте договоры, затем скачайте реестр.</p>${estimates.map(e=>`<div class="home-panel-head"><button class="btn" data-estimate="${esc(e.id)}">Смета ${esc(e.year)}${e.sourceSeed?' · Из вашего образца':''} · ${esc(budgetFormat(e).title)} · ${G.money(G.sumItems(e.items))} ₽</button><button class="btn" data-estimate="${esc(e.id)}" data-estimate-view="register">Реестр</button></div>`).join('')}</section>`;
   }
   function renderEstimate(main){
     const e=data.estimates.find(e=>e.id===editing.id),folder=data.folders.find(f=>f.id===e?.folderId);

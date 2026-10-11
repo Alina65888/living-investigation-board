@@ -84,7 +84,7 @@ try{
  if(shotDir){await registry.saveAs(resolve(shotDir,'registry.docx'));await p.screenshot({path:resolve(shotDir,'registry-mobile.png'),fullPage:true});}
  await p.reload();await p.locator('[data-reg-type=contract]').waitFor();assert.match(p.url(),/docMode=register/);
  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'register fits mobile');
- assert.equal(mobile.docs().estimates.length,1);assert.equal(mobile.docs().deals.length,1);assert.equal(mobile.docs().deals[0].items[0].price,12000);assert.deepEqual(mobile.errors,[]);
+ assert.equal(mobile.docs().estimates.length,2);assert.equal(mobile.docs().deals.length,1);assert.equal(mobile.docs().deals[0].items[0].price,12000);assert.deepEqual(mobile.errors,[]);
  console.log('PASS budget workflow: mobile form, Word, linked contract, explicit refresh, register, persistence');
  await mobile.context.close();
 }finally{await browser.close();await new Promise(r=>server.close(r));}
