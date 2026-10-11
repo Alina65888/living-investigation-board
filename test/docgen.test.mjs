@@ -208,11 +208,11 @@ test('IP and organisations can provide services as well as goods, with matching 
     assert.doesNotMatch(plain,/Покупатель|Поставщик|Товар|Самозанятый|Гражданка|Паспорт|НПД|профессиональный доход|99 \(/);
     assert.match(plain,/15 \(Пятнадцати\) рабочих дней/);
     assert.match(plain,/Акта об исполнении обязательств и\/или УПД/);
-    assert.match(plain,/3.1. Стоимость по Договору согласовывается сторонами в спецификациях/);
+    assert.match(plain,/3.1. Стоимость оказываемых услуг по настоящему договору составляет:/);
     assert.match(plain,/3.4. На сумму предоплаты или аванса проценты/);
     assert.match(plain,/3.5. В случае несвоевременного исполнения/);
     assert.doesNotMatch(plain,/6.4. Разногласия|поставляемого|Срок оказания поставки/);
-    assert.match(plain,/с 01 по 20 мая 2026 г./);
+    assert.match(plain,/с 01 по 20 мая 2026 года/);
     assert.match(plain,/Срок оказания услуг: 20 мая 2026 г./);
     assert.match(G.contractTemplateInfo(d,e).payment,/15 рабочих дней.*Акта об исполнении обязательств и\/или УПД/);
     assert.match(plain,executor.kind==='ip'?/ОГРНИП/:/ИНН \/ КПП/);
@@ -242,10 +242,10 @@ test('Baylyk services retain the six-column specification with complete descript
     const tables=[...document.matchAll(/<w:tbl[\s>][\s\S]*?<\/w:tbl>/g)].map(m=>m[0]);
     const specification=tables.find(t=>t.includes('Наименование'));
     const rows=[...specification.matchAll(/<w:tr[\s>][\s\S]*?<\/w:tr>/g)].map(m=>m[0]);
-    assert.equal(rows.length,count+2);
+    assert.equal(rows.length,count+3);
     assert.equal((rows[0].match(/<w:tc[\s>]/g)||[]).length,6);
     assert.doesNotMatch(rows[0],/>Описание</);
-    for(let i=1;i<=count;i++)assert.ok(document.includes(`Услуга ${i}. Описание ${i} &lt;&amp;&gt;`));
+    for(let i=1;i<=count;i++)assert.ok(document.replace(/<[^>]*>/g,'').includes(`Услуга ${i}.Описание ${i} &lt;&amp;&gt;`));
     assert.match(document,new RegExp(G.money(count*200).replace(/\u00a0/g,'[ \\u00a0]')));
   }
 });
@@ -256,7 +256,32 @@ test('invoice quantity and unit values match their column headings for IP and or
     const rows=[...document.matchAll(/<w:tr[\s>][\s\S]*?<\/w:tr>/g)].map(m=>m[0]);
     const row=rows.find(r=>r.includes('Услуги'));
     const cells=[...row.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map(m=>m[0].replace(/<[^>]*>/g,''));
-    assert.equal(cells[2],'3');assert.equal(cells[3],'час');
+    const header=rows.find(r=>r.includes('Наименование товаров'));const headings=[...header.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map(m=>m[0].replace(/<[^>]*>/g,''));
+    assert.equal(cells[headings.indexOf('Кол-во')],'3');assert.equal(cells[headings.indexOf('Ед. изм.')],'час');
+  }
+});
+
+test('September references calculate clause 3.1, separate requisites, and remove sample seals', async()=>{
+  const customer={...ngo,name:'Региональная молодежная общественная организация «Полное название»',shortName:'РМОО «Краткое название»',address:'АДРЕС ЗАКАЗЧИКА'};
+  for(const executor of [org,{...npd,kind:'ip',ogrn:'123456789012345'}]){
+    const d={...deal,type:executor.kind==='ip'?'supply':'services',date:'2026-03-01',period:'с 1 по 9 марта 2026 г.',deadline:'2026-03-09',items:[{name:'Первая позиция',description:'Подробное описание',unit:'час',qty:2,price:1500.25}],itemGroup:'Раздел по смете'};
+    const output=await word('contract',d,customer,executor),xml=text(output['word/document.xml']),plain=xml.replace(/<[^>]*>/g,'');
+    assert.match(plain,/3.1. Стоимость (поставляемых товаров|оказываемых услуг) по настоящему договору составляет: 3[ \u00a0]000/);
+    assert.match(plain,/Раздел по смете/);assert.match(plain,/РМОО «Краткое название»/);
+    assert.match(plain,/01 марта 2026/);assert.match(plain,/в период с 01 по 09 марта 2026 года/);
+    assert.doesNotMatch(plain,/года в период в период|г\. в период|Срок оказания поставки/);
+    if(executor.kind==='ip')assert.doesNotMatch(plain,/данную услугу/);
+    const rows=[...xml.matchAll(/<w:tr[\s>][\s\S]*?<\/w:tr>/g)].map(m=>m[0]);
+    const cells=r=>[...r.matchAll(/<w:tc[\s>][\s\S]*?<\/w:tc>/g)].map(m=>m[0].replace(/<[^>]*>/g,''));
+    assert.equal(cells(rows.find(r=>cells(r)[0]==='ИНН / КПП'))[1],`${customer.inn} / ${customer.kpp}`);
+    assert.equal(cells(rows.find(r=>cells(r)[0]==='Адрес'))[1],customer.address);
+    for(const kind of ['contract','invoice']){
+      const files=await word(kind,d,customer,executor);
+      assert.equal(Object.keys(files).some(p=>p.startsWith('word/media/')),false);
+      assert.doesNotMatch(text(files['word/document.xml']),/<w:drawing|<v:imagedata/);
+      const all=Object.entries(files).filter(([n])=>n.endsWith('.xml')).map(([,v])=>text(v)).join('');
+      assert.doesNotMatch(all,/Байлык|Шейлан|Габдуллин|Шаталов/);
+    }
   }
 });
 

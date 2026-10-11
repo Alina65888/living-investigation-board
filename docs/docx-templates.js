@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=50';
+import * as G from './docgen.js?v=51';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -52,6 +52,7 @@ function partyData(p, side, role, tail) {
   const lead = personal ? preamble.slice(0, preamble.indexOf(',')) : title;
   const fields = {
     Title: title, ShortTitle: G.partyShortTitle(p), Role: role, RoleColon: role + ':',
+    BusinessTitle: p.kind==='ip' ? `ИП ${p.fio}` : G.partyShortTitle(p).replace(/^Общество с ограниченной ответственностью\s+/i,'ООО '),
     HeadTitle: p.kind === 'ip' ? 'Индивидуальный предприниматель' : title,
     HeadName: p.kind === 'ip' ? p.fio : '',
     PreambleName: lead, PreambleTail: preamble.slice(lead.length) + ', ' + tail,
@@ -74,6 +75,7 @@ function dataFor(deal, customer, executor) {
   const period = deal.period ? ' ' + G.padDateDays(deal.period) : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
   const customerBy = deal.type === 'supply' ? 'Покупателем' : 'Заказчиком';
   const executorBy = deal.type === 'supply' ? 'Поставщиком' : deal.type === 'works' ? 'Подрядчиком' : 'Исполнителем';
+  const businessPeriod=G.padDateDays(deal.period||'').trim().replace(/^в период\s+/i,'').replace(/ г\.$/,' года');
   const payment = `${t.cust} оплачивает Стоимость по Договору ${t.execDat} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты ${paymentTerms(deal.type,executor)}.`;
   const subject = deal.type === 'supply'
     ? `1.1. Поставщик обязуется поставить в течение срока действия Договора Товары по заданию Покупателя согласно Спецификации (Приложение № 1 к настоящему договору): ${deal.subject}${period}, а Покупатель в случае отсутствия мотивированных возражений обязуется принять и оплатить Товар.`
@@ -89,10 +91,14 @@ function dataFor(deal, customer, executor) {
     contractTitle: `${t.title} № ${deal.number}`,
     city: /^(г\.|с\.|пос\.|п\.|д\.)\s/.test(deal.city || '') ? deal.city : `г. ${deal.city || 'Казань'}`,
     date: G.longDate(deal.date), subjectClause: G.padDateDays(subject), paymentClause: '3.2. ' + payment,
+    businessSubject: G.padDateDays(deal.subject).trim()+(businessPeriod?' в период '+businessPeriod:''),
     priceLead: `3.1. Стоимость ${t.objGen.toLowerCase()} по настоящему договору составляет: `,
     amountWithWords: G.amountWithWords(total), vatLine: G.vatLine(total, executor),
     appendixContract: `к Договору ${t.title}`, appendixReference: `№ ${deal.number} от ${G.longDate(deal.date)}`,
-    itemGroup: deal.itemGroup || t.obj,
+    itemGroup: deal.itemGroup || 'Закупка непроизведенных активов, нематериальных активов, материальных запасов и основных средств',
+    businessAppendixReference: `№ ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/,' года')}`,
+    contractNumber: deal.number, contractDateYear: G.longDate(deal.date).replace(/ г\.$/,' года'),
+    businessDeadline: deal.deadline ? `${t.term}: ${G.longDate(deal.deadline)}` : deal.period ? `${t.term}: ${G.padDateDays(deal.period)}` : '',
     totalLabel: G.vatPayer(executor) ? 'ИТОГО с НДС:' : executor.kind === 'npd' ? 'ИТОГО:' : 'ИТОГО без НДС:', total: G.money(total),
     appendixPayment: `Порядок расчетов: оплата производится ${customerBy} путем перечисления денежных средств на расчетный счет ${t.execGen} в размере 100% оплаты в соответствии с п. 3.2 Договора.`,
     appendixTotal: `Общая стоимость настоящего Приложения составляет: ${G.amountWithWords(total)} ${G.vatLine(total, executor)}`,

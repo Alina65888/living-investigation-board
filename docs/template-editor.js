@@ -1,12 +1,13 @@
-// Local Word editing for the two approved NPD templates. No document contents
+// Local Word editing for approved NPD and business templates. No document contents
 // are sent to a third-party service; active/previous versions live in /api/docs.
-import * as G from './docgen.js?v=50';
-import {loadTemplate} from './docx-templates.js?v=50';
+import * as G from './docgen.js?v=51';
+import {loadTemplate,templateName,contractAvailability} from './docx-templates.js?v=51';
 
 const enc=new TextEncoder(),dec=new TextDecoder();
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const MAX_BYTES=2*1024*1024;
-export const EDITABLE_TEMPLATES={services:'Договор и спецификация СЗН','act-npd':'Акт СЗН'};
+export const EDITABLE_TEMPLATES={services:'Договор и спецификация СЗН','act-npd':'Акт СЗН','supply-ip':'Поставка — договор и спецификация ИП','services-business':'Услуги — договор и спецификация ИП и ООО','invoice-ip':'Счет ИП','invoice-org':'Счет ООО'};
+const documentKind=key=>key.startsWith('invoice-')?'invoice':key==='act-npd'?'act':'contract';
 const docParts=name=>/^word\/(document|header\d+|footer\d+)\.xml$/.test(name);
 const parse=s=>{if(/<!DOCTYPE|<!ENTITY/i.test(s))throw new Error('Файл содержит неподдерживаемую структуру XML.');const d=new DOMParser().parseFromString(s,'application/xml');if(d.querySelector('parsererror'))throw new Error('Не удалось прочитать структуру Word. Сохраните файл в формате DOCX.');return d;};
 const serial=d=>new XMLSerializer().serializeToString(d);
@@ -73,7 +74,8 @@ export async function prepareTemplate(name,buffer,baseline){
   if(!EDITABLE_TEMPLATES[name])throw new Error('Неизвестный шаблон.');
   const original=G.unzipStored(baseline||await loadTemplate(name));
   const required=counts(Object.entries(original).filter(([n])=>docParts(n)).flatMap(([,data])=>tokens(dec.decode(data))));
-  const files=await readWordZip(buffer),found=[],itemKeys=new Set([...required.keys()].filter(k=>k.startsWith('item')&&k!=='itemGroup'));
+  const files=await readWordZip(buffer),found=[],itemKeys=new Set([...required.keys()].filter(k=>(k.startsWith('item')&&k!=='itemGroup')||k==='invoiceItemNumber'));
+  const hasItems=dec.decode(original['word/document.xml']).includes('<!--items:');
   for(const [path,data] of Object.entries(files)){
     if(/vbaProject|embeddings\/|activeX\//i.test(path))throw new Error('Загрузите DOCX без макросов и вложенных объектов.');
     if(!/\.xml$|\.rels$/.test(path))continue;
@@ -87,7 +89,7 @@ export async function prepareTemplate(name,buffer,baseline){
     const all=visible(document),starts=[...all.matchAll(/\{\{#items\}\}/g)],ends=[...all.matchAll(/\{\{\/items\}\}/g)];
     // Editable downloads use visible markers. Raw bundled templates may instead
     // carry XML comments; only accept those after the same row/field checks.
-    if(name==='services'&&path==='word/document.xml'){
+    if(hasItems&&path==='word/document.xml'){
       if(starts.length===1&&ends.length===1){
         repeated=[...document.getElementsByTagNameNS(W,'tr')].find(row=>visible(row).includes('{{#items}}')&&visible(row).includes('{{/items}}'));
         if(!repeated||starts[0].index>=ends[0].index)throw new Error('Начало и конец позиций должны оставаться в одной строке спецификации.');
@@ -107,7 +109,7 @@ export async function prepareTemplate(name,buffer,baseline){
     if(keys.some(k=>!required.has(k)))throw new Error('Неизвестное поле: {{'+keys.find(k=>!required.has(k))+'}}. Используйте поля скачанного шаблона.');
     const result=serial(document);
     const markers=[...result.matchAll(/<!--items:[\s\S]*?-->/g)].map(m=>m[0]);
-    if(name==='services'&&path==='word/document.xml'){
+    if(hasItems&&path==='word/document.xml'){
       if(markers.join('')!=='<!--items:0:start--><!--items:0:end-->')throw new Error('В шаблоне должна быть одна строка для повторения позиций.');
     }else if(markers.length)throw new Error('В этом документе не должно быть строк повторения позиций.');
     // Reject split tokens that could not be repaired (e.g. across paragraphs).
@@ -127,9 +129,23 @@ const sample={
   deal:{type:'services',number:'ПРИМЕР',date:'2026-03-01',actDate:'2026-03-09',deadline:'2026-03-09',subject:'руководителя проекта «Пример»',period:'с 1 по 9 марта 2026 г.',items:[{name:'Руководитель проекта',description:'Координация участников и контроль сроков проекта.',unit:'услуга',qty:1,price:1000}],paid:false}
 };
 
+function sampleFor(key){
+  const example=structuredClone(sample);
+  if(key==='services'||key==='act-npd')return example;
+  const ip=key==='supply-ip'||key==='invoice-ip';
+  example.executor={...example.customer,kind:ip?'ip':'org',name:'Общество с ограниченной ответственностью «Пример»',shortName:'ООО «Пример»',fio:'Иванов Иван Иванович',signerPosition:'директор',inn:ip?'000000000000':'0000000000',ogrn:ip?'000000000000000':'0000000000000'};
+  example.deal={...example.deal,type:ip?'supply':'services',subject:ip?'выставочных стендов для проекта «Пример»':'логистические услуги для проекта «Пример»',items:[{name:ip?'Выставочный стенд':'Логистические услуги',description:'Описание позиции для проверки шаблона.',unit:ip?'штука':'услуга',qty:2,price:1000}]};
+  return example;
+}
+function matchesTemplate(key,deal,parties){
+  const customer=parties.find(p=>p.id===deal.customerId),executor=parties.find(p=>p.id===deal.executorId),kind=documentKind(key);
+  if(!customer||!executor||contractAvailability(deal,customer,executor))return false;
+  return templateName(kind,deal,executor)===key;
+}
+
 export function renderTemplateManager(main,{data,save,back,toast}){
   let pending=null,busy=false,previewed=false;
-  main.innerHTML=`<div class="main-scroll docs-page"><button class="btn ghost" data-back>← Документы</button><h1>Шаблоны СЗН</h1><p>Скачайте шаблон, измените текст или оформление в Word и загрузите его обратно. Сохраните поля в двойных фигурных скобках: сайт подставляет в них данные сделки.</p><p>После проверки и применения шаблон будет использоваться при следующих скачиваниях документов, в том числе для существующих сделок. Ранее скачанные файлы не изменятся.</p><div data-template-cards></div><section class="home-panel" data-template-review hidden></section><p class="docs-warn" data-template-error role="alert" hidden></p></div>`;
+  main.innerHTML=`<div class="main-scroll docs-page"><button class="btn ghost" data-back>← Документы</button><h1>Шаблоны документов</h1><p>Скачайте шаблон, измените текст или оформление в Word и загрузите его обратно. Сохраните поля в двойных фигурных скобках: сайт подставляет в них данные сделки.</p><p>После проверки и применения шаблон будет использоваться при следующих скачиваниях документов, в том числе для существующих сделок. Ранее скачанные файлы не изменятся.</p><div data-template-cards></div><section class="home-panel" data-template-review hidden></section><p class="docs-warn" data-template-error role="alert" hidden></p></div>`;
   main.querySelector('[data-back]').onclick=()=>{if(!busy)back();};
   const error=message=>{const el=main.querySelector('[data-template-error]');el.hidden=!message;el.textContent=message;};
   const entries=()=>data.templates||{};
@@ -140,12 +156,12 @@ export function renderTemplateManager(main,{data,save,back,toast}){
   }
   function review(){
     previewed=false;const el=main.querySelector('[data-template-review]');el.hidden=false;
-    const deals=(data.deals||[]).filter(d=>d.type==='services'&&(data.parties||[]).some(p=>p.id===d.executorId&&p.kind==='npd')&&(data.parties||[]).some(p=>p.id===d.customerId&&p.kind==='org')&&d.period);
+    const deals=(data.deals||[]).filter(d=>matchesTemplate(pending.key,d,data.parties||[]));
     el.innerHTML=`<h2>Проверьте перед применением</h2><p>${esc(pending.name)}: поля распознаны. Скачайте контрольный документ и проверьте текст, переносы и таблицы в Word.</p><label class="field"><span>Данные для проверки</span><select data-template-deal><option value="">Пример с вымышленными данными</option>${deals.map(d=>`<option value="${esc(d.id)}">№ ${esc(d.number)} · ${esc(d.subject)}</option>`).join('')}</select></label><button class="btn" data-template-preview>Скачать контрольный документ</button><label class="check-row"><input type="checkbox" data-template-checked disabled> Я проверила текст и оформление контрольного документа</label><div class="docs-buttons"><button class="btn primary" data-template-apply disabled>Применить шаблон</button><button class="btn" data-template-cancel>Отмена</button></div>`;
     const checkbox=el.querySelector('[data-template-checked]'),apply=el.querySelector('[data-template-apply]');
     checkbox.onchange=()=>apply.disabled=!previewed||!checkbox.checked;
     el.querySelector('[data-template-deal]').onchange=()=>{previewed=false;checkbox.checked=false;checkbox.disabled=true;apply.disabled=true;};
-    el.querySelector('[data-template-preview]').onclick=async e=>{if(busy)return;busy=true;e.target.disabled=true;error('');try{const deal=deals.find(d=>d.id===el.querySelector('[data-template-deal]').value),d=deal||sample.deal,c=deal?data.parties.find(p=>p.id===d.customerId):sample.customer,x=deal?data.parties.find(p=>p.id===d.executorId):sample.executor;const fn=pending.key==='services'?G.contractDocx:G.actDocx;download(await fn(d,c,x,pending.buffer),'Проверка — '+EDITABLE_TEMPLATES[pending.key]+'.docx');previewed=true;checkbox.disabled=false;}catch(err){error(err.message);}finally{busy=false;e.target.disabled=false;}};
+    el.querySelector('[data-template-preview]').onclick=async e=>{if(busy)return;busy=true;e.target.disabled=true;error('');try{const example=sampleFor(pending.key),deal=deals.find(d=>d.id===el.querySelector('[data-template-deal]').value),d=deal||example.deal,c=deal?data.parties.find(p=>p.id===d.customerId):example.customer,x=deal?data.parties.find(p=>p.id===d.executorId):example.executor;const fn=G[documentKind(pending.key)+'Docx'];download(await fn(d,c,x,pending.buffer),'Проверка — '+EDITABLE_TEMPLATES[pending.key]+'.docx');previewed=true;checkbox.disabled=false;}catch(err){error(err.message);}finally{busy=false;e.target.disabled=false;}};
     apply.onclick=async()=>{if(busy||!previewed||!checkbox.checked)return;busy=true;apply.disabled=true;error('');try{const next=structuredClone(entries()),old=next[pending.key];next[pending.key]={...templateRecord(pending.buffer,pending.name),previous:old?{name:old.name,data:old.data,updatedAt:old.updatedAt}:null};await save(next);data.templates=next;pending=null;el.hidden=true;cards();toast('Шаблон обновлен. Он будет использован при следующем скачивании.');}catch(e){error(e.message);}finally{busy=false;apply.disabled=false;}};
     el.querySelector('[data-template-cancel]').onclick=()=>{if(busy)return;pending=null;el.hidden=true;error('');};el.scrollIntoView({block:'start'});
   }
