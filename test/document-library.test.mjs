@@ -13,7 +13,7 @@ test('download names follow archive dates, counterparties and project codes',()=
 });
 test('archive names handle missing numbers, dates, unsafe symbols and unknown project codes',()=>{
   const p={kind:'org',shortName:'Тест: «А/Б»'};
-  assert.equal(documentFilename('contract',{date:'2025-01-02',number:'Б/Н'},p,{name:'Проект'}),'2025.01.02 Договор БН Тест_ «А_Б» (Проект).docx');
+  assert.equal(documentFilename('contract',{date:'2025-01-02',number:'Б/Н'},p,{name:'Проект'}),'2025.01.02 Договор БН Тест_ «А_Б» (ПРО).docx');
   assert.match(documentFilename('contract',{},p),/^Без даты Договор БН /);
   assert.equal(dealYear({date:'2026-09-20'}),'2026');
   assert.equal(dealYear({}),'Без даты');

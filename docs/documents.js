@@ -1,8 +1,11 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=51';
-import * as G from './docgen.js?v=51';
-import {renderTemplateManager,templateBytes} from './template-editor.js?v=51';
-import {DEFAULT_FOLDERS,dealYear,documentFilename} from './document-library.js?v=51';
+import {loadDocs,saveDocs} from './workspace-store.js?v=52';
+import * as G from './docgen.js?v=52';
+import {renderTemplateManager,templateBytes} from './template-editor.js?v=52';
+import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=52';
+
+import {renderProjectBudget} from './project-budget-ui.js?v=52';
+import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=52';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -19,7 +22,7 @@ export function createDocumentsUI(ctx){
   const visibleDeals=()=>deals().filter(d=>!['all','inbox'].includes(currentProject())?d.projectId===currentProject():true);
   const parties=()=>data.parties,deals=()=>data.deals,party=id=>data.parties.find(p=>p.id===id);
   const title=p=>p?G.partyTitle(p):'—';
-  async function ensure(){if(data)return;if(!loading)loading=loadDocs().then(x=>{data=x||{};data.version=1;data.parties??=[];data.deals??=[];data.folders??=structuredClone(DEFAULT_FOLDERS);}).catch(e=>{loadError=e.message;throw e;}).finally(()=>loading=null);await loading;}
+  async function ensure(){if(data)return;if(!loading)loading=loadDocs().then(x=>{data=x||{};data.version=1;data.parties??=[];data.deals??=[];data.folders??=structuredClone(DEFAULT_FOLDERS);data.estimates??=[];fillProjectCodes(data.folders);}).catch(e=>{loadError=e.message;throw e;}).finally(()=>loading=null);await loading;}
   function saveState(text){document.querySelectorAll('[data-doc-save]').forEach(el=>el.textContent=text);}
   function persist(){dirty=true;saveState('Сохраняем…');clearTimeout(saveTimer);saveTimer=setTimeout(()=>flush().catch(e=>ctx.toast(e.message)),500);}
   async function flush(){
@@ -42,8 +45,8 @@ export function createDocumentsUI(ctx){
     try{await run;}finally{pendingSaves--;}
   }
   function route(){ctx.routeChanged?.();}
-  function writeRoute(q){if(folderId)q.set('folder',folderId);if(folderYear)q.set('year',folderYear);if(folderOrg)q.set('docsOrg',folderOrg);if(tab!=='deals')q.set('docsTab',tab);if(editing){q.set(editing.kind,editing.id);if(editing.returnTo)q.set('returnTo',editing.returnTo);if(editing.step)q.set('step',editing.step);}}
-  function restoreRoute(q){folderId=q.get('folder')||'';folderYear=q.get('year')||'';folderOrg=q.get('docsOrg')||'';tab=['parties','templates'].includes(q.get('docsTab'))?q.get('docsTab'):'deals';editing=q.get('party')?{kind:'party',id:q.get('party'),returnTo:q.get('returnTo')||''}:q.get('deal')?{kind:'deal',id:q.get('deal'),step:Math.min(3,Math.max(1,+q.get('step')||1))}:null;}
+  function writeRoute(q){if(folderId)q.set('folder',folderId);if(folderYear)q.set('year',folderYear);if(folderOrg)q.set('docsOrg',folderOrg);if(tab!=='deals')q.set('docsTab',tab);if(editing){q.set(editing.kind,editing.id);if(editing.returnTo)q.set('returnTo',editing.returnTo);if(editing.step)q.set('step',editing.step);if(editing.view)q.set('docMode',editing.view);}}
+  function restoreRoute(q){folderId=q.get('folder')||'';folderYear=q.get('year')||'';folderOrg=q.get('docsOrg')||'';tab=['parties','templates'].includes(q.get('docsTab'))?q.get('docsTab'):'deals';editing=q.get('estimate')?{kind:'estimate',id:q.get('estimate'),view:q.get('docMode')==='register'?'register':'estimate'}:q.get('party')?{kind:'party',id:q.get('party'),returnTo:q.get('returnTo')||''}:q.get('deal')?{kind:'deal',id:q.get('deal'),step:Math.min(3,Math.max(1,+q.get('step')||1))}:null;}
   function newDeal(task){
     const projectId=task?.projectId||(!['all','inbox'].includes(currentProject())?currentProject():'');
     const own=parties().filter(p=>p.own),previous=deals().find(d=>d.projectId===projectId&&party(d.customerId)?.own);
@@ -62,21 +65,24 @@ export function createDocumentsUI(ctx){
   async function render(main){
     main.innerHTML='<div class="main-scroll"><div class="loading-state">Открываю документы…</div></div>';
     const generation=++renderGeneration;try{await ensure();}catch(e){main.innerHTML='<div class="main-scroll"><h1>Документы не загрузились</h1><p class="docs-warn"></p></div>';main.querySelector('p').textContent=e.message;return;}if(generation!==renderGeneration||!main.isConnected)return;
+    if(editing?.kind==='estimate')return renderEstimate(main);
     if(editing?.kind==='deal')return renderDeal(main,editing.id);
     if(editing?.kind==='party')return renderParty(main,editing.id);
     route();
     if(tab==='templates')return renderTemplateManager(main,{data,toast:ctx.toast,back:()=>{tab='deals';render(main);},save:updateTemplates});
-    main.innerHTML=`<div class="main-scroll docs-page"><div class="page-head"><div><div class="eyebrow">Договоры · счета · акты · УПД</div><h1>Документы</h1>${!['all','inbox'].includes(currentProject())?`<p>${esc(workspace().projects.find(p=>p.id===currentProject())?.name||'Проект')} · <button class="link" data-all-docs>Все документы</button></p>`:''}<p>Карточки сторон заполняются один раз — дальше комплект документов собирается из сделки.</p></div><div class="docs-buttons"><button class="btn" data-open-templates>Шаблоны</button><button class="btn primary" data-new-deal >Создать документы</button></div></div>${loadError?`<div class="docs-warn">${esc(loadError)}</div>`:''}<div class="docs-tabs" role="tablist"><button class="${tab==='deals'?'active':''}" data-tab="deals">Сделки <span>${visibleDeals().length}</span></button><button class="${tab==='parties'?'active':''}" data-tab="parties">Организации и контрагенты <span>${parties().length}</span></button></div>${tab==='deals'?folderList()+dealsList():partiesList()}</div>`;
+    main.innerHTML=`<div class="main-scroll docs-page"><div class="page-head"><div><div class="eyebrow">Договоры · счета · акты · УПД</div><h1>Документы</h1>${!['all','inbox'].includes(currentProject())?`<p>${esc(workspace().projects.find(p=>p.id===currentProject())?.name||'Проект')} · <button class="link" data-all-docs>Все документы</button></p>`:''}<p>Карточки сторон заполняются один раз — дальше комплект документов собирается из сделки.</p></div><div class="docs-buttons"><button class="btn" data-open-templates>Шаблоны</button><button class="btn primary" data-new-deal >Создать документы</button></div></div>${loadError?`<div class="docs-warn">${esc(loadError)}</div>`:''}<div class="docs-tabs" role="tablist"><button class="${tab==='deals'?'active':''}" data-tab="deals">Сделки <span>${visibleDeals().length}</span></button><button class="${tab==='parties'?'active':''}" data-tab="parties">Организации и контрагенты <span>${parties().length}</span></button></div>${tab==='deals'?folderList()+estimatesList()+dealsList():partiesList()}</div>`;
     main.querySelectorAll('[data-folder]').forEach(b=>b.onclick=()=>{folderId=b.dataset.folder;folderYear='';folderForm=false;render(main)});
     main.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{folderYear=b.dataset.year;render(main)});
     main.querySelectorAll('[data-doc-org]').forEach(b=>b.onclick=()=>{folderOrg=b.dataset.docOrg;folderId='';folderYear='';render(main)});
     main.querySelector('[data-folder-new]')?.addEventListener('click',()=>{folderForm=true;render(main)});
     main.querySelector('[data-folder-edit]')?.addEventListener('click',()=>{folderForm=true;render(main)});
-    main.querySelector('[data-folder-form]')?.addEventListener('submit',e=>{e.preventDefault();const form=new FormData(e.target),existing=data.folders.find(f=>f.id===folderId);const f=existing||{id:uid()};Object.assign(f,{organization:form.get('organization'),name:String(form.get('name')).trim(),code:String(form.get('code')).trim()});if(!f.name)return;if(!existing)data.folders.push(f);folderId=f.id;folderOrg=f.organization;folderForm=false;persist();render(main)});
+    main.querySelector('[data-folder-form]')?.addEventListener('submit',e=>{e.preventDefault();const form=new FormData(e.target),existing=data.folders.find(f=>f.id===folderId);const f=existing||{id:uid()};Object.assign(f,{organization:form.get('organization'),name:String(form.get('name')).trim(),code:String(form.get('code')).trim()});if(!f.name)return;f.code=projectCode(f);if(!existing)data.folders.push(f);folderId=f.id;folderOrg=f.organization;folderForm=false;persist();render(main)});
     main.querySelector('[data-all-docs]')?.addEventListener('click',()=>ctx.showAll?.());
     main.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render(main)});
     main.querySelector('[data-open-templates]')?.addEventListener('click',async()=>{try{await flush();tab='templates';render(main);}catch(e){ctx.toast(e.message);}});
     main.querySelector('[data-new-deal]')?.addEventListener('click',()=>{newDeal();render(main);});
+    main.querySelector('[data-new-estimate]')?.addEventListener('click',()=>{newEstimate();render(main);});
+    main.querySelectorAll('[data-estimate]').forEach(b=>b.onclick=()=>{editing={kind:'estimate',id:b.dataset.estimate,view:b.dataset.estimateView||'estimate'};render(main)});
     main.querySelectorAll('[data-deal]').forEach(b=>b.onclick=()=>{editing={kind:'deal',id:b.dataset.deal,step:1};render(main)});
     main.querySelectorAll('[data-party]').forEach(b=>b.onclick=()=>{editing={kind:'party',id:b.dataset.party};render(main)});
     main.querySelectorAll('[data-new-party]').forEach(b=>b.onclick=()=>{const p={id:uid(),own:b.dataset.newParty==='own',kind:'org',signerPosition:'директор',basis:'устава'};data.parties.push(p);persist();editing={kind:'party',id:p.id};render(main)});
@@ -84,15 +90,46 @@ export function createDocumentsUI(ctx){
 
   function folderList(){
     const folders=data.folders.filter(f=>!folderOrg||f.organization===folderOrg),selected=data.folders.find(f=>f.id===folderId);
-    const years=[...new Set(visibleDeals().filter(d=>folderId==='unfiled'?!d.folderId:d.folderId===folderId).map(dealYear))].sort().reverse();
+    const years=[...new Set(visibleDeals().filter(d=>folderId==='unfiled'?!d.folderId:d.folderId===folderId).map(dealYear).concat(data.estimates.filter(e=>e.folderId===folderId).map(e=>String(e.year))))].sort().reverse();
     const count=id=>visibleDeals().filter(d=>id==='unfiled'?!d.folderId:d.folderId===id).length;
     return `<section class="home-panel docs-folders"><div class="docs-tabs"><button data-doc-org="" class="${!folderOrg?'active':''}">Все</button>${['МАНТ','ЦКД'].map(o=>`<button data-doc-org="${o}" class="${folderOrg===o?'active':''}">${o}</button>`).join('')}</div>
     <div class="home-panel-head"><h2>${selected?esc(selected.organization+' / '+selected.name):folderId==='unfiled'?'Без папки':'Папки проектов'}</h2><button class="btn" ${selected?'data-folder-edit':'data-folder-new'}>${selected?'Настроить папку':'+ Проект'}</button></div>
     ${folderId?`<button class="btn ghost" data-folder="">← Проекты</button><div class="docs-tabs"><button data-year="" class="${!folderYear?'active':''}">Все годы</button>${years.map(y=>`<button data-year="${esc(y)}" class="${folderYear===y?'active':''}">${esc(y)}</button>`).join('')}</div>`:`<div class="docs-cards">${folders.map(f=>`<button class="docs-card" data-folder="${esc(f.id)}"><small>${esc(f.organization)}</small><b>${esc(f.name)}</b><small>${count(f.id)} сделок${f.code?' · '+esc(f.code):''}</small></button>`).join('')}<button class="docs-card" data-folder="unfiled"><b>Без папки</b><small>${count('unfiled')} сделок</small></button></div>`}
-    ${folderForm?`<form data-folder-form class="docs-grid"><label class="field"><span>Организация</span><select name="organization">${['МАНТ','ЦКД'].map(o=>`<option ${(selected?.organization||folderOrg)===o?'selected':''}>${o}</option>`).join('')}</select></label><label class="field"><span>Название проекта</span><input name="name" required value="${esc(selected?.name||'')}"></label><label class="field"><span>Код проекта в названиях файлов</span><input name="code" value="${esc(selected?.code||'')}" placeholder="Например, МТ"><small>Если пусто, используем название проекта.</small></label><button class="btn primary" type="submit">Сохранить папку</button></form>`:''}</section>`;
+    ${folderForm?`<form data-folder-form class="docs-grid"><label class="field"><span>Организация</span><select name="organization">${['МАНТ','ЦКД'].map(o=>`<option ${(selected?.organization||folderOrg)===o?'selected':''}>${o}</option>`).join('')}</select></label><label class="field"><span>Название проекта</span><input name="name" required value="${esc(selected?.name||'')}"></label><label class="field"><span>Код проекта в названиях файлов</span><input name="code" value="${esc(selected?.code||'')}" placeholder="Например, МТ"><small>Короткий код будет в скобках в названии каждого файла. Если пусто, создадим сокращение.</small></label><button class="btn primary" type="submit">Сохранить папку</button></form>`:''}</section>`;
   }
   const folderDeals=()=>visibleDeals().filter(d=>(!folderOrg||data.folders.find(f=>f.id===d.folderId)?.organization===folderOrg||folderId==='unfiled')&&(!folderId||(folderId==='unfiled'?!d.folderId:d.folderId===folderId))&&(!folderYear||dealYear(d)===folderYear));
   const fileProject=d=>data.folders.find(f=>f.id===d.folderId)||workspace().projects.find(p=>p.id===d.projectId)||{};
+  function newEstimate(){
+    const folder=data.folders.find(f=>f.id===folderId);if(!folder)return;
+    const own=parties().filter(p=>p.own&&p.kind==='org'),format=folderId==='mant-pearl'?'subsidy':'competition';
+    const year=folderYear||today().slice(0,4);
+    const e={id:uid(),folderId,year,format,heading:BUDGET_FORMATS[format].heading,subtitle:`на реализацию проекта «${folder.name}» в ${year} году`,registryTitle:`по проекту «${folder.name}» в ${year} году`,customerId:own.length===1?own[0].id:'',items:[],createdAt:new Date().toISOString()};
+    data.estimates.push(e);persist();editing={kind:'estimate',id:e.id,view:'estimate'};
+  }
+  function estimatesList(){
+    if(!data.folders.some(f=>f.id===folderId))return '';
+    const estimates=data.estimates.filter(e=>e.folderId===folderId&&(!folderYear||String(e.year)===folderYear));
+    return `<section class="home-panel"><div class="home-panel-head"><h2>Смета → договоры → реестр</h2><button class="btn primary" data-new-estimate>Создать смету</button></div><p>Сначала заполните смету. Из ее позиций создайте договоры, затем скачайте реестр.</p>${estimates.map(e=>`<div class="home-panel-head"><button class="btn" data-estimate="${esc(e.id)}">Смета ${esc(e.year)} · ${esc(budgetFormat(e).title)} · ${G.money(G.sumItems(e.items))} ₽</button><button class="btn" data-estimate="${esc(e.id)}" data-estimate-view="register">Реестр</button></div>`).join('')}</section>`;
+  }
+  function renderEstimate(main){
+    const e=data.estimates.find(e=>e.id===editing.id),folder=data.folders.find(f=>f.id===e?.folderId);
+    if(!e||!folder){editing=null;return render(main);}
+    route();
+    return renderProjectBudget(main,{estimate:e,folder,data,view:editing.view||'estimate',persist,flush,toast:ctx.toast,
+      back:()=>{folderId=e.folderId;folderYear=String(e.year);editing=null;tab='deals';render(main);},
+      remove:()=>{if(!confirm('Удалить смету? Договоры и их позиции сохранятся.'))return;data.estimates=data.estimates.filter(x=>x.id!==e.id);for(const d of data.deals){if(d.estimateId===e.id)delete d.estimateId;for(const i of d.items||[])if(i.estimateId===e.id){delete i.estimateId;delete i.estimateItemId;}}persist();editing=null;render(main);},
+      onView:view=>{editing.view=view;render(main);},
+      openParties:()=>{folderId=e.folderId;folderYear=String(e.year);editing=null;tab='parties';render(main);},
+      openDeal:id=>{editing={kind:'deal',id,step:1};render(main);},
+      createDeal:async(ids,type)=>{
+        if(!party(e.customerId)?.own)throw new Error('Выберите нашу организацию в оформлении сметы. Добавить ее можно в разделе «Организации и контрагенты».');
+        const items=itemsForDeal(e,ids);folderId=e.folderId;folderYear=String(e.year);
+        const d=newDeal();Object.assign(d,{folderId:e.folderId,customerId:e.customerId,estimateId:e.id,type,items,subject:type==='services'&&items.every(i=>i.contractName||G.serviceForm(i.name))?G.serviceSubjectFromItems(items):items.map(i=>i.name).join(', ')});
+        const groups=new Set(e.items.filter(i=>ids.includes(i.id)).map(i=>+i.section));if(groups.size===1)d.itemGroup=budgetFormat(e).sections[[...groups][0]];
+        persist();await flush();render(main);
+      }
+    });
+  }
   function dealsList(){
     if(!parties().some(p=>p.own))return `<section class="home-panel docs-empty"><h2>С чего начать</h2><ol><li>Нажмите «Создать документы» и заполните свою организацию один раз.</li><li>Добавьте исполнителя: организацию, ИП или самозанятого.</li><li>Создайте сделку: тип, предмет, спецификация — и скачайте комплект документов.</li></ol></section>`;
     if(!folderDeals().length)return '<section class="home-panel docs-empty"><h2>Сделок пока нет</h2><p>Нажмите «Создать документы» — договор, счёт, акт и УПД соберутся из неё.</p></section>';
@@ -131,6 +168,7 @@ export function createDocumentsUI(ctx){
     const t=G.DEAL_TYPES[d.type];
     const step=Math.min(3,Math.max(1,editing?.step||1));editing={kind:'deal',id,step};route();
     main.innerHTML=`<div class="main-scroll docs-page"><button class="btn ghost docs-back" data-back>← Все сделки</button>${d.taskId&&workspace().tasks.some(t=>t.id===d.taskId)?'<button class="btn ghost" data-source-task>Вернуться к задаче</button>':''}<div class="page-head"><div><div class="eyebrow">Комплект документов</div><small data-doc-save role="status">${dirty||pendingSaves?'Сохраняем…':'Сохранено'}</small><h1>${esc(d.subject||'Новая сделка')}</h1></div><button class="btn" data-copy>Повторить сделку</button><button class="btn" data-del>Удалить</button></div>
+    ${d.estimateId?`<section class="home-panel"><p>Позиции перенесены из сметы. Изменения в смете не меняют этот договор автоматически.</p><div class="docs-buttons"><button class="btn" data-source-estimate>Открыть смету</button><button class="btn" data-refresh-estimate>Обновить позиции из сметы</button></div></section>`:''}
     <nav class="docs-steps" aria-label="Подготовка документов">${['Стороны','Предмет и стоимость','Документы'].map((name,i)=>`<button class="btn ${step===i+1?'primary':''}" data-step="${i+1}" aria-current="${step===i+1?'step':'false'}">${i+1}. ${name}</button>`).join('')}</nav>
     <section class="home-panel docs-form" data-doc-step="1"><h2>Проект и задача</h2><div class="docs-grid"><label class="field wide"><span>Папка документов</span><select data-f="folderId"><option value="">Без папки</option>${data.folders.map(f=>`<option value="${esc(f.id)}" ${f.id===d.folderId?'selected':''}>${esc(f.organization+' / '+f.name)}</option>`).join('')}</select><small>Год папки определяется по дате договора. Существующую сделку можно перенести, выбрав папку.</small></label><label class="field"><span>Проект задач (необязательно)</span><select data-f="projectId"><option value="">Без проекта</option>${workspace().projects.map(p=>`<option value="${esc(p.id)}" ${p.id===d.projectId?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="field"><span>Задача</span><select data-f="taskId"><option value="">Без задачи</option>${workspace().tasks.filter(t=>t.projectId===(d.projectId||'')).map(t=>`<option value="${esc(t.id)}" ${t.id===d.taskId?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label></div></section>
     <section class="home-panel docs-form" data-doc-step="2"><h2>Что покупаем</h2><div class="docs-seg ${d.type==='works'?'three':'two'}">${Object.entries(G.DEAL_TYPES).filter(([k])=>k!=='works'||d.type==='works').map(([k,v])=>`<button class="${d.type===k?'active':''}" data-type="${k}"><b>${v.short}${v.draft?' <i>черновик</i>':''}</b><small>${TYPE_HINT[k]}</small></button>`).join('')}</div></section>
@@ -183,9 +221,11 @@ export function createDocumentsUI(ctx){
     main.querySelector('[data-prev-step]').hidden=step===1;main.querySelector('[data-prev-step]').onclick=()=>goStep(step-1);
     main.querySelector('[data-next-step]').hidden=step===3;main.querySelector('[data-next-step]').textContent=step===2?'К документам':'Далее';main.querySelector('[data-next-step]').onclick=()=>goStep(step+1);
     main.querySelector('[data-source-task]')?.addEventListener('click',async()=>{try{await flush();ctx.openTask(d.taskId);}catch(e){ctx.toast(e.message);}});
-    main.querySelector('[data-copy]').onclick=()=>{const copy=structuredClone(d);Object.assign(copy,{id:uid(),number:'',date:today(),deadline:'',period:'',invoiceNumber:'',invoiceDate:'',updNumber:'',actDate:'',paid:false,taskId:'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});copy.items=copy.items.map(i=>({...i,id:uid()}));data.deals.unshift(copy);editing={kind:'deal',id:copy.id,step:2};persist();render(main);ctx.toast('Копия создана. Проверьте номер, сроки и стоимость.');};
+    main.querySelector('[data-copy]').onclick=()=>{const copy=structuredClone(d);Object.assign(copy,{id:uid(),number:'',date:today(),deadline:'',period:'',invoiceNumber:'',invoiceDate:'',updNumber:'',actDate:'',paid:false,taskId:'',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});delete copy.estimateId;copy.items=copy.items.map(i=>{const item={...i,id:uid()};delete item.estimateId;delete item.estimateItemId;return item;});data.deals.unshift(copy);editing={kind:'deal',id:copy.id,step:2};persist();render(main);ctx.toast('Копия создана. Проверьте номер, сроки и стоимость.');};
     main.querySelector('[data-new-own]').onclick=()=>{const p={id:uid(),own:true,kind:'org',signerPosition:'директор',basis:'устава'};data.parties.push(p);d.customerId=p.id;persist();editing={kind:'party',id:p.id,returnTo:id};renderParty(main,p.id);};
     for(const [key,field] of [['own','customerId'],['exec','executorId']])main.querySelector(`[data-edit-${key}]`).onclick=()=>{if(!party(d[field]))return ctx.toast('Сначала выберите сторону');editing={kind:'party',id:d[field],returnTo:id};renderParty(main,d[field]);};
+    main.querySelector('[data-source-estimate]')?.addEventListener('click',()=>{editing={kind:'estimate',id:d.estimateId,view:'estimate'};render(main);});
+    main.querySelector('[data-refresh-estimate]')?.addEventListener('click',()=>{try{const e=data.estimates.find(e=>e.id===d.estimateId);if(!e)throw new Error('Смета не найдена.');const ids=new Set(d.items.filter(i=>i.estimateId===e.id).map(i=>i.estimateItemId));const issues=budgetIssues({...e,items:e.items.filter(i=>ids.has(i.id))});if(issues.length)throw new Error(issues.join(' '));if(!confirm('Заменить связанные наименования, описания, единицы, количества и цены данными из сметы?'))return;d.items=refreshEstimateItems(d,e);persist();renderDeal(main,id);}catch(err){ctx.toast(err.message);}});
     drawItems();changed(false);
   }
 
