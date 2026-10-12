@@ -20,7 +20,7 @@ const date=new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});
 function fixture(){const task=(id,title,extra={})=>({id,title,projectId:'p1',stageId:'s1',status:'doing',dueDate:date,assignee:team[1].name,lead:team[1].name,assigneeEmail:team[1].email,assigneeEmails:[team[1].email],checklist:[],progress:30,priority:'medium',...extra});return {organizations:[{id:'o1',name:'Тестовое пространство'}],projects:[{id:'p1',orgId:'o1',name:'Форум',owner:team[0].name},{id:'p2',orgId:'o1',name:'Выставка'}],stages:[{id:'s1',projectId:'p1',name:'Подготовка',order:1}],tasks:[task('simple','Позвонить на площадку'),task('review','Подготовить договор',{requiresReview:true}),task('approval','Проверить программу',{status:'approval',requiresReview:true,result:{text:'Программа подготовлена',url:'https://example.test/result',fileIds:[]}}),task('inbox','Распределить поручение',{projectId:'',assignee:'',assigneeEmail:'',assigneeEmails:[]}),task('later','Дальняя задача',{dueDate:'2099-01-01'})],relations:[],events:[],milestones:[],meta:{demo:false}};}
 async function setup(role='admin',width=1440){
   const context=await browser.newContext({viewport:{width,height:960},timezoneId:'Europe/Moscow'}),page=await context.newPage();
-  let data=fixture(),revision=1,docs={parties:[{id:'own',own:true,kind:'org',name:'РМОО Молодежная Ассамблея народов Татарстана',signer:'Тестов Иван Иванович',signerPosition:'Председатель'},{id:'exec',kind:'npd',fio:'Иванова Анна Ивановна'}],deals:[],version:1},docRevision=0;
+  let data=fixture(),revision=1,docs={parties:[{id:'own',own:true,kind:'org',name:'РМОО Молодежная Ассамблея народов Татарстана',signer:'Тестов Иван Иванович',signerPosition:'Председатель'},{id:'exec',kind:'npd',fio:'Иванова Анна Ивановна'}],deals:[],estimates:[{id:'empty',folderId:'mant-pearl',year:'2026',format:'subsidy',items:[]}],version:1},docRevision=0;
   const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',response:'Реквизиты будут утром',created_at:new Date().toISOString()}];
   page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
@@ -59,6 +59,10 @@ async function waitForSaved(page){await page.waitForFunction(()=>!document.query
 try{
  const mobile=await setup('admin',390),p=mobile.page;
  await p.locator('[data-view="docs"]').click();await p.locator('[data-folder="mant-pearl"]').click();
+ assert.equal(await p.locator('[data-new-estimate]').count(),0);assert.equal(await p.locator('[data-estimate]').count(),2);assert.equal(await p.locator('[data-estimate-view=register]').count(),1);assert.equal(await p.getByText(/Из вашего образца/).count(),0);assert.equal(await p.locator('[data-estimate=empty]').count(),0);
+ if(shotDir){await p.locator('[data-estimate="pearl-subsidy-2026-v1"]').first().scrollIntoViewIfNeeded();await p.waitForTimeout(400);await p.screenshot({path:resolve(shotDir,'simplified-budget-mobile.png'),animations:'disabled'});}
+ await p.locator('[data-folder-edit]').click();await p.locator('summary').filter({hasText:'Пустые черновики'}).click();assert.equal(await p.locator('[data-estimate=empty]').count(),1);
+ await p.locator('[data-folder-form] [type=submit]').click();
  await p.locator('[data-estimate="pearl-subsidy-2026-v1"]').first().click();
  assert.equal(await p.locator('[data-budget-item]').count(),14);
  assert.equal(await p.locator('[data-budget-field=customerId]').inputValue(),'own');
@@ -68,7 +72,7 @@ try{
  const pending=p.waitForEvent('download');await p.locator('[data-budget-download]').click();const download=await pending;assert.equal(await download.failure(),null);assert.equal(download.suggestedFilename(),'Смета 2026 (ЖМ).docx');
  const {unzipStored}=await import('../docs/docgen.js');const bytes=await readFile(await download.path());const xml=new TextDecoder().decode(unzipStored(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength))['word/document.xml']);
  assert.match(xml,/300 000,00/);assert.match(xml,/15 280,00/);assert.doesNotMatch(xml,/15 820,00/);assert.match(xml,/Баннер/);assert.match(xml,/Шаталов/);
- await p.reload();await p.locator('[data-budget-item]').first().waitFor();assert.equal(await p.locator('[data-budget-item]').count(),14);assert.equal(await p.locator('[data-source-price]').count(),0);assert.equal(mobile.docs().estimates.length,1);
+ await p.reload();await p.locator('[data-budget-item]').first().waitFor();assert.equal(await p.locator('[data-budget-item]').count(),14);assert.equal(await p.locator('[data-source-price]').count(),0);assert.equal(mobile.docs().estimates.length,2);
  await p.locator('[data-budget-select]').first().check();await p.locator('[data-budget-create]').click();await p.locator('[data-step="2"]').click();
  assert.equal(await p.locator('[data-it=name]').inputValue(),'Руководитель проекта');assert.equal(await p.locator('[data-it=price]').inputValue(),'30000');assert.match(await p.locator('[data-it=description]').inputValue(),/200 часов/);
  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert.deepEqual(mobile.errors,[]);

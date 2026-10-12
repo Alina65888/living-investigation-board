@@ -59,15 +59,15 @@ async function waitForSaved(page){await page.waitForFunction(()=>!document.query
 try{
  const mobile=await setup('admin',390),p=mobile.page;
  await p.locator('[data-view="docs"]').click();
- await p.locator('[data-folder="mant-pearl"]').click();await p.locator('[data-new-estimate]').click();
- assert.equal(await p.locator('[data-budget-format]').inputValue(),'subsidy');
+ await p.locator('[data-folder="mant-mt"]').click();await p.locator('[data-new-estimate]').click();
+ assert.equal(await p.locator('[data-budget-format]').inputValue(),'competition');
  await p.locator('[data-budget-field=year]').fill('2026');
  await p.locator('[data-budget-add]').click();
  await p.locator('[data-budget-it=name]').fill('Руководитель проекта');
  await p.locator('[data-budget-it=description]').fill('Координация работы команды и исполнителей');
  await p.locator('[data-budget-it=unit]').fill('месяц');await p.locator('[data-budget-it=qty]').fill('2');await p.locator('[data-budget-it=price]').fill('10000');
  await p.locator('[data-budget-select]').check();
- const dl=p.waitForEvent('download');await p.locator('[data-budget-download]').click();const estimate=await dl;assert.equal(estimate.suggestedFilename(),'Смета 2026 (ЖМ).docx');assert.equal(await estimate.failure(),null);
+ const dl=p.waitForEvent('download');await p.locator('[data-budget-download]').click();const estimate=await dl;assert.equal(estimate.suggestedFilename(),'Смета 2026 (МТ).docx');assert.equal(await estimate.failure(),null);
  if(shotDir){await estimate.saveAs(resolve(shotDir,'estimate.docx'));await p.screenshot({path:resolve(shotDir,'estimate-mobile.png'),fullPage:true});}
  await p.locator('[data-budget-create]').click();await p.locator('[data-f=executorId]').selectOption('exec');
  await p.locator('[data-step="2"]').click();
@@ -80,7 +80,7 @@ try{
  await p.locator('[data-refresh-estimate]').click();assert.equal(await p.locator('[data-it=price]').inputValue(),'12000');
  await p.locator('[data-source-estimate]').click();await p.locator('[data-budget-view=register]').click();
  await p.getByText('Договор № 1/ЖМ от 01.03.2026',{exact:true}).waitFor();
- const reg=p.waitForEvent('download');await p.locator('[data-budget-download]').click();const registry=await reg;assert.equal(registry.suggestedFilename(),'Реестр 2026 (ЖМ).docx');assert.equal(await registry.failure(),null);
+ const reg=p.waitForEvent('download');await p.locator('[data-budget-download]').click();const registry=await reg;assert.equal(registry.suggestedFilename(),'Реестр 2026 (МТ).docx');assert.equal(await registry.failure(),null);
  if(shotDir){await registry.saveAs(resolve(shotDir,'registry.docx'));await p.screenshot({path:resolve(shotDir,'registry-mobile.png'),fullPage:true});}
  await p.reload();await p.locator('[data-reg-type=contract]').waitFor();assert.match(p.url(),/docMode=register/);
  assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'register fits mobile');

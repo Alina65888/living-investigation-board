@@ -1,12 +1,12 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=53';
-import * as G from './docgen.js?v=53';
-import {renderTemplateManager,templateBytes} from './template-editor.js?v=53';
-import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=53';
+import {loadDocs,saveDocs} from './workspace-store.js?v=54';
+import * as G from './docgen.js?v=54';
+import {renderTemplateManager,templateBytes} from './template-editor.js?v=54';
+import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=54';
 
-import {seedPearlBudget} from './pearl-budget.js?v=53';
-import {renderProjectBudget} from './project-budget-ui.js?v=53';
-import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=53';
+import {seedPearlBudget} from './pearl-budget.js?v=54';
+import {renderProjectBudget} from './project-budget-ui.js?v=54';
+import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=54';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -83,6 +83,7 @@ export function createDocumentsUI(ctx){
     main.querySelector('[data-open-templates]')?.addEventListener('click',async()=>{try{await flush();tab='templates';render(main);}catch(e){ctx.toast(e.message);}});
     main.querySelector('[data-new-deal]')?.addEventListener('click',()=>{newDeal();render(main);});
     main.querySelector('[data-new-estimate]')?.addEventListener('click',()=>{newEstimate();render(main);});
+    main.querySelector('[data-budget-year-create]')?.addEventListener('click',()=>{const year=main.querySelector('[data-budget-year]').value;if(!/^\d{4}$/.test(year))return ctx.toast('Укажите год из четырех цифр.');folderYear=year;folderForm=false;newEstimate();render(main);});
     main.querySelectorAll('[data-estimate]').forEach(b=>b.onclick=()=>{editing={kind:'estimate',id:b.dataset.estimate,view:b.dataset.estimateView||'estimate'};render(main)});
     main.querySelectorAll('[data-deal]').forEach(b=>b.onclick=()=>{editing={kind:'deal',id:b.dataset.deal,step:1};render(main)});
     main.querySelectorAll('[data-party]').forEach(b=>b.onclick=()=>{editing={kind:'party',id:b.dataset.party};render(main)});
@@ -96,7 +97,7 @@ export function createDocumentsUI(ctx){
     return `<section class="home-panel docs-folders"><div class="docs-tabs"><button data-doc-org="" class="${!folderOrg?'active':''}">Все</button>${['МАНТ','ЦКД'].map(o=>`<button data-doc-org="${o}" class="${folderOrg===o?'active':''}">${o}</button>`).join('')}</div>
     <div class="home-panel-head"><h2>${selected?esc(selected.organization+' / '+selected.name):folderId==='unfiled'?'Без папки':'Папки проектов'}</h2><button class="btn" ${selected?'data-folder-edit':'data-folder-new'}>${selected?'Настроить папку':'+ Проект'}</button></div>
     ${folderId?`<button class="btn ghost" data-folder="">← Проекты</button><div class="docs-tabs"><button data-year="" class="${!folderYear?'active':''}">Все годы</button>${years.map(y=>`<button data-year="${esc(y)}" class="${folderYear===y?'active':''}">${esc(y)}</button>`).join('')}</div>`:`<div class="docs-cards">${folders.map(f=>`<button class="docs-card" data-folder="${esc(f.id)}"><small>${esc(f.organization)}</small><b>${esc(f.name)}</b><small>${count(f.id)} сделок${f.code?' · '+esc(f.code):''}</small></button>`).join('')}<button class="docs-card" data-folder="unfiled"><b>Без папки</b><small>${count('unfiled')} сделок</small></button></div>`}
-    ${folderForm?`<form data-folder-form class="docs-grid"><label class="field"><span>Организация</span><select name="organization">${['МАНТ','ЦКД'].map(o=>`<option ${(selected?.organization||folderOrg)===o?'selected':''}>${o}</option>`).join('')}</select></label><label class="field"><span>Название проекта</span><input name="name" required value="${esc(selected?.name||'')}"></label><label class="field"><span>Код проекта в названиях файлов</span><input name="code" value="${esc(selected?.code||'')}" placeholder="Например, МТ"><small>Короткий код будет в скобках в названии каждого файла. Если пусто, создадим сокращение.</small></label><button class="btn primary" type="submit">Сохранить папку</button></form>`:''}</section>`;
+    ${folderForm?`<form data-folder-form class="docs-grid"><label class="field"><span>Организация</span><select name="organization">${['МАНТ','ЦКД'].map(o=>`<option ${(selected?.organization||folderOrg)===o?'selected':''}>${o}</option>`).join('')}</select></label><label class="field"><span>Название проекта</span><input name="name" required value="${esc(selected?.name||'')}"></label><label class="field"><span>Код проекта в названиях файлов</span><input name="code" value="${esc(selected?.code||'')}" placeholder="Например, МТ"><small>Короткий код будет в скобках в названии каждого файла. Если пусто, создадим сокращение.</small></label><button class="btn primary" type="submit">Сохранить папку</button></form>${selected?`<div class="docs-grid"><label class="field"><span>Смета на другой год</span><input type="number" min="2000" max="9999" data-budget-year value="${Math.max(+today().slice(0,4),...years.filter(y=>/^\d{4}$/.test(y)).map(Number))+1}"></label><button class="btn" data-budget-year-create>Открыть или создать смету</button></div>${budgetEntries().hidden.length?`<details><summary>Пустые черновики</summary>${budgetEntries().hidden.map(e=>`<button class="btn" data-estimate="${esc(e.id)}">Черновик ${esc(e.year)}</button>`).join('')}</details>`:''}`:''}`:''}</section>`;
   }
   const folderDeals=()=>visibleDeals().filter(d=>(!folderOrg||data.folders.find(f=>f.id===d.folderId)?.organization===folderOrg||folderId==='unfiled')&&(!folderId||(folderId==='unfiled'?!d.folderId:d.folderId===folderId))&&(!folderYear||dealYear(d)===folderYear));
   const fileProject=d=>data.folders.find(f=>f.id===d.folderId)||workspace().projects.find(p=>p.id===d.projectId)||{};
@@ -104,13 +105,20 @@ export function createDocumentsUI(ctx){
     const folder=data.folders.find(f=>f.id===folderId);if(!folder)return;
     const own=parties().filter(p=>p.own&&p.kind==='org'),format=folderId==='mant-pearl'?'subsidy':'competition';
     const year=folderYear||today().slice(0,4);
+    const existing=budgetEntries(year).visible[0];if(existing){editing={kind:'estimate',id:existing.id,view:'estimate'};return;}
     const e={id:uid(),folderId,year,format,heading:BUDGET_FORMATS[format].heading,subtitle:`на реализацию проекта «${folder.name}» в ${year} году`,registryTitle:`по проекту «${folder.name}» в ${year} году`,customerId:own.length===1?own[0].id:'',items:[],createdAt:new Date().toISOString()};
     data.estimates.push(e);persist();editing={kind:'estimate',id:e.id,view:'estimate'};
   }
+  function budgetEntries(year=folderYear){
+    const estimates=data.estimates.filter(e=>e.folderId===folderId&&(!year||String(e.year)===year));
+    const hidden=estimates.filter(e=>!e.items?.length&&!data.deals.some(d=>d.estimateId===e.id||d.items?.some(i=>i.estimateId===e.id))&&estimates.some(other=>other!==e&&other.items?.length&&String(other.year)===String(e.year)&&other.format===e.format&&(!e.customerId||e.customerId===other.customerId)));
+    return {visible:estimates.filter(e=>!hidden.includes(e)),hidden};
+  }
   function estimatesList(){
     if(!data.folders.some(f=>f.id===folderId))return '';
-    const estimates=data.estimates.filter(e=>e.folderId===folderId&&(!folderYear||String(e.year)===folderYear));
-    return `<section class="home-panel"><div class="home-panel-head"><h2>Смета → договоры → реестр</h2><button class="btn primary" data-new-estimate>Создать смету</button></div><p>Сначала заполните смету. Из ее позиций создайте договоры, затем скачайте реестр.</p>${estimates.map(e=>`<div class="home-panel-head"><button class="btn" data-estimate="${esc(e.id)}">Смета ${esc(e.year)}${e.sourceSeed?' · Из вашего образца':''} · ${esc(budgetFormat(e).title)} · ${G.money(G.sumItems(e.items))} ₽</button><button class="btn" data-estimate="${esc(e.id)}" data-estimate-view="register">Реестр</button></div>`).join('')}</section>`;
+    const {visible:estimates}=budgetEntries();
+    if(!estimates.length)return '<section class="home-panel"><div class="home-panel-head"><h2>Смета проекта</h2><button class="btn primary" data-new-estimate>Создать смету</button></div><p>Добавьте позиции, чтобы использовать их в договорах.</p></section>';
+    return `<section class="home-panel"><h2>Смета проекта</h2>${estimates.map(e=>`<div class="home-panel-head"><button class="btn" data-estimate="${esc(e.id)}">Смета ${esc(e.year)} · ${G.money(G.sumItems(e.items))} ₽</button><button class="btn" data-estimate="${esc(e.id)}" data-estimate-view="register">Реестр</button></div>`).join('')}</section>`;
   }
   function renderEstimate(main){
     const e=data.estimates.find(e=>e.id===editing.id),folder=data.folders.find(f=>f.id===e?.folderId);
