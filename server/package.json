@@ -6,6 +6,7 @@
     "dev": "php -S 127.0.0.1:8788 -t ../docs dev-router.php",
     "build": "node build.mjs",
     "test": "node --test test/*.test.mjs",
-    "test:roles": "php test/role-migrations.php"
+    "test:roles": "php test/role-migrations.php",
+    "test:letters": "php test/letters.php"
   }
 }

@@ -1,6 +1,6 @@
 // Import values from Word tables locally. A preview is required before persistence.
-import {BUDGET_FORMATS} from './project-budget.js?v=56';
-import {readWordZip} from './template-editor.js?v=56';
+import {BUDGET_FORMATS} from './project-budget.js?v=57';
+import {readWordZip} from './template-editor.js?v=57';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const norm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^а-яa-z0-9]/g,'');
 const sectionKey=s=>norm(String(s||'').replace(/^\s*\d+[.)\s]+/,''));
