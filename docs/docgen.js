@@ -231,7 +231,7 @@ export function unzipStored(buf) {
 }
 
 // Word output uses the original, anonymized Office packages.
-export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=58';
+export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=59';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------

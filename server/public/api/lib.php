@@ -301,6 +301,10 @@ function merge_admin(?object $server, object $incoming, int $base, int $current,
     $inc = ensure_shape($incoming);
     $srv = ensure_shape($server);
     $srvById = by_id($srv->tasks);
+    // Keep deletions through stale saves from another tab or teammate. A fresh
+    // administrator save may explicitly restore the task (the Undo button).
+    $deleted = (array)prop($srv, '_deletedTasks', new stdClass());
+    $inc->tasks = array_values(array_filter($inc->tasks, fn($t) => !isset($deleted[(string)prop($t,'id','')]) || $base >= (int)$deleted[(string)$t->id]));
     if (!$hadEvents) $inc->events = $srv->events; // an older page without calendar events keeps them
     if ($base === $current) {
         if (!$hadArchive) $inc->archive = $srv->archive;
@@ -323,6 +327,11 @@ function merge_admin(?object $server, object $incoming, int $base, int $current,
         $inc->tasks = $tasks;
         $inc->archive = $srv->archive;
     }
+    $present = by_id($inc->tasks);
+    foreach($srv->tasks as $t)if(!isset($present[(string)$t->id]))$deleted[(string)$t->id]=$next;
+    foreach($present as $id=>$t)unset($deleted[$id]);
+    $inc->_deletedTasks=(object)$deleted;
+    $inc->relations=array_values(array_filter($inc->relations,fn($r)=>!isset($deleted[(string)prop($r,'sourceId','')])&&!isset($deleted[(string)prop($r,'targetId','')])));
     foreach ($inc->tasks as $t) {
         $before = $srvById[(string)prop($t, 'id', '')] ?? null;
         if (!$before) { $t->_createdRev = $next; if (!prop($t, 'createdAt')) $t->createdAt = now(); if (!prop($t, 'createdBy')) $t->createdBy = $me['email']; }
@@ -339,6 +348,7 @@ function merge_member(?object $server, object $incoming, int $next, array $team,
     $touched = false;
     foreach ((array)prop($incoming, 'tasks', []) as $t) {
         if (!is_object($t)) continue;
+        if(isset(((array)prop($srv,'_deletedTasks',new stdClass()))[(string)prop($t,'id','')]))continue;
         $s = $srvById[(string)prop($t, 'id', '')] ?? null;
         if ($s) {
             if (!can_edit($s, $me)) continue;
