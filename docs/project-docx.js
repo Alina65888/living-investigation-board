@@ -1,6 +1,6 @@
-import * as G from './docgen.js?v=55';
-import {loadTemplate} from './docx-templates.js?v=55';
-import {budgetGroups,budgetIssues,registryRows} from './project-budget.js?v=55';
+import * as G from './docgen.js?v=56';
+import {loadTemplate} from './docx-templates.js?v=56';
+import {budgetGroups,budgetIssues,registryRows} from './project-budget.js?v=56';
 const enc=new TextEncoder(),dec=new TextDecoder();
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 const fill=(s,v)=>s.replace(/\{\{(\w+)\}\}/g,(_,k)=>{if(!Object.hasOwn(v,k))throw new Error('Не заполнено поле '+k);return String(v[k]??'').split(/\r?\n/).map(escape).join('</w:t><w:br/><w:t xml:space="preserve">');});

@@ -21,7 +21,7 @@ function fixture(){const task=(id,title,extra={})=>({id,title,projectId:'p1',sta
 async function setup(role='admin',width=1440){
   const context=await browser.newContext({viewport:{width,height:960},timezoneId:'Europe/Moscow'}),page=await context.newPage();
   let data=fixture(),revision=1,docs={parties:[],deals:[],version:1},docRevision=0;
-  const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',response:'Реквизиты будут утром',created_at:new Date().toISOString()}];
+  const calls=[],errors=[],threads={},files={},problems=[{id:'help',task_id:'review',title:'Нужны реквизиты',detail:'Пришлите реквизиты исполнителя',author:team[1].email,status:'open',response:'Реквизиты будут утром',response_version:'answer-1',response_read:false,created_at:new Date().toISOString()}];
   page.on('pageerror',e=>errors.push(e.message));
   page.on('dialog',d=>d.accept());
   const me=team[role==='admin'?0:1];
@@ -46,7 +46,7 @@ async function setup(role='admin',width=1440){
     }else if(path==='/api/task-thread'){
       if(b){(threads[b.id]??=[]).push({body:b.text,author:me.email,created_at:new Date().toISOString()});out={ok:true};}else out=threads[u.searchParams.get('id')]||[];
     }else if(path==='/api/task-files'){out=files[u.searchParams.get('taskId')]||[];}
-    else if(path==='/api/problems'){if(b){b.id?Object.assign(problems.find(p=>p.id===b.id),b):problems.push({...b,id:'question-'+problems.length,task_id:b.taskId,author:me.email,status:'open',created_at:new Date().toISOString()});out={ok:true};}else out=problems;}
+    else if(path==='/api/problems'){if(b){if(b.action==='read'){const problem=problems.find(p=>p.id===b.id);assert.equal(b.version,problem.response_version);problem.response_read=true;}else b.id?Object.assign(problems.find(p=>p.id===b.id),b):problems.push({...b,id:'question-'+problems.length,task_id:b.taskId,author:me.email,status:'open',created_at:new Date().toISOString()});out={ok:true};}else out=problems;}
     else if(path==='/api/notifications')out=[];
     else throw Error('Unexpected API path '+path);
     await route.fulfill({json:out});
@@ -127,7 +127,7 @@ try{
   const m=await setup('member'),q=m.page;
   assert.equal(await q.locator('.view-tabs .tab').count(),3);
   await q.locator('[data-answer-alert]').getByText('Реквизиты будут утром',{exact:true}).waitFor();
-  await q.locator('[data-seen="help"]').click();
+  await q.locator('[data-seen="help"]').click();await q.locator('[data-seen="help"]').waitFor({state:'detached'});
   await q.reload();await q.locator('[data-my-questions]').waitFor();
   assert.equal(await q.locator('[data-answer-alert] article').count(),0);
   assert.equal(await q.locator('[data-response-count]').isVisible(),false);
@@ -139,7 +139,7 @@ try{
   assert.equal(await q.locator('.my-task .task-next-step').count(),0);
   assert.equal(await q.locator('.my-task').filter({hasText:'Проверить программу'}).locator('.st-approval').count(),1);
   await q.locator('[data-my-questions]').getByText('Нужны реквизиты',{exact:true}).waitFor();
-  await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
+  if(!await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra').evaluate(e=>e.open))await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-help-task="simple"]').click();
   await q.locator('.modal [name=reason]').selectOption('deadline');
   await q.locator('.modal [name=detail]').fill('Площадка ответит завтра');
@@ -148,12 +148,12 @@ try{
   assert.equal(m.data().tasks.find(t=>t.id==='simple').dueDate,date);
   assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');
   assert.equal(m.calls.filter(c=>c.path==='/api/workspace'||c.path==='/api/task-actions').length,0);
-  assert.ok(m.calls.some(c=>c.path==='/api/problems'&&c.body.detail.includes('12.01.2027')));
+  assert.ok(m.calls.some(c=>c.path==='/api/problems'&&c.body.detail?.includes('12.01.2027')));
   await q.locator('[data-my-questions]').getByText('Не успеваю к сроку: Позвонить на площадку',{exact:true}).waitFor();
   await q.locator('[data-done="review"]').click();
   await q.locator('.modal textarea[name=text]').waitFor();assert.equal(m.data().tasks.find(t=>t.id==='review').status,'doing');
   await q.locator('.modal [data-close]').click();
-  await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
+  if(!await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra').evaluate(e=>e.open))await q.locator('.my-task').filter({has:q.locator('[data-done="simple"]')}).locator('.my-extra summary').click();
   await q.locator('[data-attach="simple"]').click();await q.locator('.modal [name=url]').fill('https://example.test/material');await q.locator('.modal [type=submit]').click();
   await q.locator('.modal').waitFor({state:'detached'});assert.equal(m.data().tasks.find(t=>t.id==='simple').status,'doing');assert.ok(m.calls.some(c=>c.path==='/api/task-thread'&&c.body.text.includes('https://example.test/material')));
   assert.equal(await q.locator('#inspector [data-help]').textContent(),'Задать вопрос');

@@ -31,6 +31,8 @@ jobs:
           node-version: 22
       - name: Check PHP syntax
         run: for f in server/public/api/*.php; do php -l "$f"; done
+      - name: Check one-time role migration
+        run: php server/test/role-migrations.php
       - name: Build the site folder
         run: node server/build.mjs
       - name: Attach the site folder for manual upload
