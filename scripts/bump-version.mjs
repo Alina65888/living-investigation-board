@@ -9,4 +9,8 @@ for (const f of readdirSync(dir).filter(f => f.endsWith('.js'))) {
   const src = readFileSync(new URL(f, dir), 'utf8');
   writeFileSync(new URL(f, dir), src.replace(/from '\.\/([a-z0-9-]+)\.js(\?v=\d+)?'/g, `from './$1.js?v=${next}'`));
 }
+for (const f of ['letters.html']) {
+  const path=new URL(f,dir);
+  writeFileSync(path,readFileSync(path,'utf8').replace(/(letters\.(?:js|css))\?v=\d+/g, `$1?v=${next}`));
+}
 console.log('version', next);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 // The static app (docs/) talks to it through /api/* — see docs/workspace-store.js.
 
 require_once __DIR__ . '/role-migrations.php';
+require_once __DIR__ . '/letters.php';
 
 const SESSION_DAYS = 30;
 const MAX_FILE = 10 * 1024 * 1024;
@@ -730,6 +731,7 @@ function run(): void
         }
         if (in_array($path, ['/api/me', '/api/setup', '/api/login', '/api/logout'], true)) handle_auth($path, $method);
         $me = current_user() ?? fail(401, 'Войдите в аккаунт');
+        handle_letters($path, $method, $me);
         handle_api($path, $method, $me);
     } catch (HttpError $e) {
         send_json(['error' => $e->getMessage()], $e->status);
