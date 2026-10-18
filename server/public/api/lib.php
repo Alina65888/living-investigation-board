@@ -4,6 +4,8 @@ declare(strict_types=1);
 // Accounts with email + password, roles admin / member, the shared workspace and the team workflow.
 // The static app (docs/) talks to it through /api/* — see docs/workspace-store.js.
 
+require_once __DIR__ . '/role-migrations.php';
+
 const SESSION_DAYS = 30;
 const MAX_FILE = 10 * 1024 * 1024;
 const LOGIN_LIMIT = 10;
@@ -98,6 +100,7 @@ function migrate(PDO $pdo): void
     foreach ($tables as $t) $pdo->exec('CREATE TABLE IF NOT EXISTS ' . $t . (is_mysql() ? ' DEFAULT CHARSET=utf8mb4' : ''));
     if (!is_mysql()) foreach (['sessions(email)', 'notifications(email, created_at)', 'thread(task_id, created_at)', 'files(task_id)'] as $i => $ix) $pdo->exec("CREATE INDEX IF NOT EXISTS ix$i ON $ix");
     foreach (['workspace', 'docs'] as $t) $pdo->exec((is_mysql() ? 'INSERT IGNORE' : 'INSERT OR IGNORE') . " INTO $t (id, data, revision) VALUES (1, NULL, 0)");
+    apply_role_migrations($pdo, is_mysql());
 }
 function q(string $sql, array $args = []): PDOStatement { $st = db()->prepare($sql); $st->execute($args); return $st; }
 function one(string $sql, array $args = []): ?array { $r = q($sql, $args)->fetch(); return $r === false ? null : $r; }

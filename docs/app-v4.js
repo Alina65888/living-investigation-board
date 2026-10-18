@@ -1,14 +1,15 @@
-import {bindDraft,draftKey} from './drafts.js?v=55';
-import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=55';
-import {createWorkflow} from './task-workflow.js?v=55';
-import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=55';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=55';
-import {createTeamUI} from './team-ui.js?v=55'
-import {authGate,openAccount} from './auth-ui.js?v=55'
-import {createDocumentsUI} from './documents.js?v=55';
-import {HQView} from './hq.js?v=55'
-import {LINKS} from './corkboard.js?v=55';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=55';
+import {assigneeOptions,matchesAssignee} from './task-assignees.js?v=56';
+import {bindDraft,draftKey} from './drafts.js?v=56';
+import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=56';
+import {createWorkflow} from './task-workflow.js?v=56';
+import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=56';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=56';
+import {createTeamUI} from './team-ui.js?v=56'
+import {authGate,openAccount} from './auth-ui.js?v=56'
+import {createDocumentsUI} from './documents.js?v=56';
+import {HQView} from './hq.js?v=56'
+import {LINKS} from './corkboard.js?v=56';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=56';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На проверке'],['done','Готово']];
@@ -89,8 +90,11 @@ await authGate();
 try{state=await loadState()}catch(e){const root=document.querySelector('#app');root.innerHTML='<div class="connection-error"><h1>Не удалось открыть рабочее пространство</h1><p></p><button onclick="location.reload()">Попробовать ещё раз</button></div>';root.querySelector('p').textContent=e.message;throw e}
 let dirty=false,editGeneration=0;
 let lastWorkView='list',hqFocusId=null;
-let view='home',calendarMode='month',scope='all',currentProject='all',selectedTaskId=null,selectedProjectId=null,search='',hq=null,saveTimer=null,monthAnchor=new Date(),timelineStart=new Date();
+let view='home',calendarMode='month',scope='all',assigneeFilter='all',currentProject='all',selectedTaskId=null,selectedProjectId=null,search='',hq=null,saveTimer=null,monthAnchor=new Date(),timelineStart=new Date();
 const initialHash=new URLSearchParams(location.hash.replace(/^#/,''));
+const taskPeopleOptions=()=>assigneeOptions(state.tasks,hosted?session.team:[]);
+const validAssignee=value=>taskPeopleOptions().some(o=>o.key===value)?value:'all';
+assigneeFilter=validAssignee(initialHash.get('assignee'));
 if(['home','board','list','kanban','calendar','people','hq','problems','integrations','notifications','archive','docs','mine','awaiting'].includes(initialHash.get('view')))view=initialHash.get('view');
 if(isWorkView(view)&&view!=='board')lastWorkView=view;
 if(initialHash.get('project')&&state.projects.some(p=>p.id===initialHash.get('project')))currentProject=initialHash.get('project');
@@ -102,7 +106,7 @@ const teamUI=createTeamUI({statusOf:t=>effectiveStatus(t),statusName:v=>statusNa
 const documentsUI=createDocumentsUI({toast,getState:()=>state,getProject:()=>currentProject,showAll:()=>{currentProject='all';scope='all';search='';documentsUI.reset();renderAll(true);},routeChanged:updateUrl,openTask:async id=>{await setView('list');selectedTaskId=id;selectedProjectId=null;renderInspector()}});
 documentsUI.restoreRoute(initialHash);
 const workflow=createWorkflow({getState:()=>state,getTasks:()=>dailyTasks(state.tasks,state.projects,search),getSearch:()=>search,clearSearch:()=>{search='';const input=document.querySelector('#search');if(input)input.value='';renderMain();updateUrl();},modal,toast,setView,updateTask,blockers:autoBlockers,help:(id,reason)=>teamUI.openProblem(id,reason),answerProblem:x=>teamUI.answer(x),documents:documentsUI,openTask:id=>{selectedTaskId=id;selectedProjectId=null;renderInspector()},closeTask:()=>{selectedTaskId=null;renderInspector()},flush:flushChanges,reload:reloadTeam,addTask});
-async function flushChanges(){clearTimeout(saveTimer);await settle();if(dirty){await persist();dirty=false;}if(hasConflict())throw new Error('Обновите общую базу перед продолжением.');}
+async function flushChanges(){clearTimeout(saveTimer);await settle();if(dirty){await persist();dirty=false;}if(hasConflict())throw new Error('Обновите общую базу перед продолжением.');if(!dirty&&!isPending())setSaveState(hosted?'Общая база · сохранено':'На устройстве · сохранено');}
 async function reloadTeam(){state=normalizeState(await loadWorkspace());scheduleCache.clear();if(!state.tasks.some(t=>t.id===selectedTaskId))selectedTaskId=null;renderAll(false);}
 let refreshing=false,notificationSnapshot='';
 if(hosted)setInterval(async()=>{if(refreshing||document.hidden||view==='board'||view==='docs'||dirty||isPending()||hasConflict())return;refreshing=true;try{const x=await api('/api/workspace');if(dirty||isPending()||view==='board')return;if(x.revision!==session.revision){if(document.querySelector('.modal-backdrop,[data-quick-form]')||document.querySelector('[data-add] input[name=title]')?.value.trim()||selectedTaskId||document.activeElement?.matches('input,textarea,select')||document.querySelector('[data-select]:checked')){setSaveState('Есть обновления · нажмите «Обновить»');return;}state=normalizeState(x.data);Object.assign(session,{me:x.me,team:x.team,revision:x.revision});scheduleCache.clear();renderAll(false);setSaveState('Общая база · обновлено');}const ns=await api('/api/notifications');const signal=ns.map(n=>n.id+':'+(n.read_at||'')).join('|');if(view==='awaiting'&&signal!==notificationSnapshot&&!selectedTaskId&&!document.querySelector('.modal-backdrop')&&!document.activeElement?.matches('input,textarea,select'))renderMain();notificationSnapshot=signal;const button=document.querySelector('[data-view="notifications"]');if(button){const count=ns.filter(n=>!n.read_at).length;button.querySelector('[data-unread]').textContent=count||'';button.setAttribute('aria-label',`Уведомления: ${count} непрочитанных`);}}catch{setSaveState('Нет связи · повторим обновление');}finally{refreshing=false;}},15000);
@@ -138,6 +142,7 @@ function updateUrl(replace=false){
   if(view!=='home')q.set('view',view);
   if(currentProject!=='all')q.set('project',currentProject);
   if(scope!=='all')q.set('scope',scope);
+  if(assigneeFilter!=='all')q.set('assignee',assigneeFilter);
   if(search)q.set('q',search);
   if(selectedTaskId)q.set('task',selectedTaskId);else if(selectedProjectId)q.set('focus',selectedProjectId);
   if(view==='docs')documentsUI.writeRoute(q);
@@ -152,6 +157,7 @@ function restoreRoute(){
   view=['home','mine','list','kanban','calendar','board','hq','people','problems','docs','integrations','notifications','archive','awaiting'].includes(q.get('view'))?q.get('view'):'home';
   if(view==='docs'&&!isAdmin())view='home';
   currentProject=q.get('project')==='inbox'||state.projects.some(p=>p.id===q.get('project'))?q.get('project'):'all';
+  assigneeFilter=validAssignee(q.get('assignee'));
   scope=SCOPES.some(([k])=>k===q.get('scope'))?q.get('scope'):'all';search=q.get('q')||'';
   selectedTaskId=state.tasks.some(t=>t.id===q.get('task'))?q.get('task'):null;
   selectedProjectId=!selectedTaskId&&state.projects.some(p=>p.id===q.get('focus'))?q.get('focus'):null;
@@ -168,6 +174,7 @@ function allCriticalIds(){const set=new Set();for(const p of state.projects)proj
 
 function filteredTasks(){
   let items=[...state.tasks];
+  if(isWorkView(view))items=items.filter(t=>matchesAssignee(t,assigneeFilter,hosted?session.team:[]));
   if(currentProject==='inbox')items=items.filter(t=>!t.projectId||t.inbox);
   else{if(currentProject!=='all')items=items.filter(t=>t.projectId===currentProject)}
   if(scope==='today')items=items.filter(t=>t.dueDate===todayISO()&&effectiveStatus(t)!=='done');
@@ -207,9 +214,10 @@ function places(){return [['home',hosted&&!isAdmin()?'Мои задачи':'Се
 function placeTab([v,n]){return v==='work'?`<button class="tab ${isWorkView(view)?'active':''}" data-place="work">${n}</button>`:`<button class="tab ${view===v?'active':''}" data-view="${v}">${n}</button>`;}
 function workBar(main){
   if(!isWorkView(view))return;const bar=document.createElement('div');bar.className='work-bar';
-  bar.innerHTML=`<div class="work-views" aria-label="Как показать задачи">${WORK_VIEWS.slice(0,3).map(([v,n])=>`<button aria-pressed="${view===v}" class="${view===v?'active':''}" data-view="${v}">${n}</button>`).join('')}</div><label class="scope-select project-select">Проект <select data-project-select><option value="all">Все проекты</option><option value="inbox" ${currentProject==='inbox'?'selected':''}>Входящие</option>${state.projects.filter(p=>!p.archived).map(p=>`<option value="${esc(p.id)}" ${p.id===currentProject?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="scope-select">Показать <select data-scope>${SCOPES.filter(([v])=>!['risks','critical'].includes(v)||v===scope).map(([v,n])=>`<option value="${v}" ${scope===v?'selected':''}>${n}</option>`).join('')}</select></label><details class="work-tools"><summary>Дополнительно</summary><div><label>Инструмент <select data-more-view><option value="">Выберите</option>${WORK_VIEWS.slice(3).map(([v,n])=>`<option value="${v}" ${view===v?'selected':''}>${n}</option>`).join('')}</select></label>${isAdmin()?`<label>Анализ <select data-analysis><option value="all">Без фильтра</option>${SCOPES.filter(([v])=>['risks','critical'].includes(v)).map(([v,n])=>`<option value="${v}" ${scope===v?'selected':''}>${n}</option>`).join('')}</select></label>`:''}</div></details>${currentProject!=='all'&&currentProject!=='inbox'?'<button class="btn" data-project-info>О проекте</button>':''}${currentProject!=='all'&&currentProject!=='inbox'&&isAdmin()?'<button class="btn" data-project-docs>Документы проекта</button>':''}`;
+  bar.innerHTML=`<div class="work-views" aria-label="Как показать задачи">${WORK_VIEWS.slice(0,3).map(([v,n])=>`<button aria-pressed="${view===v}" class="${view===v?'active':''}" data-view="${v}">${n}</button>`).join('')}</div><label class="scope-select project-select">Проект <select data-project-select><option value="all">Все проекты</option><option value="inbox" ${currentProject==='inbox'?'selected':''}>Входящие</option>${state.projects.filter(p=>!p.archived).map(p=>`<option value="${esc(p.id)}" ${p.id===currentProject?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><label class="scope-select assignee-select">Исполнитель <select data-assignee-select>${taskPeopleOptions().map(o=>`<option value="${esc(o.key)}" ${o.key===assigneeFilter?'selected':''}>${esc(o.label)}</option>`).join('')}</select></label><label class="scope-select">Показать <select data-scope>${SCOPES.filter(([v])=>!['risks','critical'].includes(v)||v===scope).map(([v,n])=>`<option value="${v}" ${scope===v?'selected':''}>${n}</option>`).join('')}</select></label><details class="work-tools"><summary>Дополнительно</summary><div><label>Инструмент <select data-more-view><option value="">Выберите</option>${WORK_VIEWS.slice(3).map(([v,n])=>`<option value="${v}" ${view===v?'selected':''}>${n}</option>`).join('')}</select></label>${isAdmin()?`<label>Анализ <select data-analysis><option value="all">Без фильтра</option>${SCOPES.filter(([v])=>['risks','critical'].includes(v)).map(([v,n])=>`<option value="${v}" ${scope===v?'selected':''}>${n}</option>`).join('')}</select></label>`:''}</div></details>${currentProject!=='all'&&currentProject!=='inbox'?'<button class="btn" data-project-info>О проекте</button>':''}${currentProject!=='all'&&currentProject!=='inbox'&&isAdmin()?'<button class="btn" data-project-docs>Документы проекта</button>':''}`;
   main.prepend(bar);main.classList.add('has-workbar');bar.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>setView(b.dataset.view));bar.querySelector('[data-analysis]')?.addEventListener('change',e=>{scope=e.target.value;renderSidebar();renderMain();updateUrl();});bar.querySelector('[data-more-view]').onchange=e=>{if(e.target.value)setView(e.target.value);};
   bar.querySelector('[data-project-select]').onchange=e=>{currentProject=e.target.value;scope='all';selectedTaskId=null;selectedProjectId=null;renderAll(false);};
+  bar.querySelector('[data-assignee-select]').onchange=e=>{assigneeFilter=e.target.value;selectedTaskId=null;selectedProjectId=null;renderAll(false);};
   bar.querySelector('[data-scope]').onchange=e=>{scope=e.target.value;renderSidebar();renderMain();updateUrl();};
   bar.querySelector('[data-project-info]')?.addEventListener('click',()=>{selectedProjectId=currentProject;selectedTaskId=null;renderInspector();});
   bar.querySelector('[data-project-docs]')?.addEventListener('click',()=>{documentsUI.reset();setView('docs');});
@@ -238,9 +246,9 @@ function kpiStrip(items,{withGauge=false}={}){const s=summary(items);const all=i
 function bindKpis(main){main.querySelectorAll('[data-kpi]').forEach(x=>x.onclick=()=>{scope=x.dataset.kpi;setView(isWorkView(view)&&view!=='board'?view:lastWorkView)})}
 function pageTitle(){if(currentProject==='inbox')return'Входящие';if(currentProject!=='all')return projectBy(currentProject)?.name||'Проект';if(scope==='today')return'Срок сегодня';if(scope==='overdue')return'Просрочено';if(scope==='blocked')return'Заблокировано';if(scope==='week')return'Неделя';if(scope==='risks')return'Риски';if(scope==='approval')return'Ждут решения';if(scope==='critical')return'Критический путь';return'Все проекты'}
 function contextName(){if(currentProject==='inbox')return'Входящие';if(currentProject!=='all')return projectBy(currentProject)?.name||'Проект';return'Все проекты'}
-function contextBar(main){if(view==='board')return;if(hosted&&['home','mine'].includes(view)){if(!isAdmin()||view==='mine'||!search)return;const bar=document.createElement('div');bar.className='context-bar';bar.innerHTML='<span>Поиск по всем проектам:</span><b></b><button class="btn mini">Сбросить поиск</button>';bar.querySelector('b').textContent=search;bar.querySelector('button').onclick=()=>{search='';document.querySelector('#search').value='';renderMain();updateUrl()};main.prepend(bar);return;}const names={today:'Срок сегодня',overdue:'Просрочено',blocked:'Заблокировано',week:'Ближайшие 7 дней',risks:'Риски',approval:'Ждут решения',critical:'Критический путь'};const active=currentProject!=='all'||(scope!=='all'&&!isWorkView(view))||!!search;if(!active)return;const bar=document.createElement('div');bar.className='context-bar';bar.innerHTML=`<span>Показано:</span><b>${esc(contextName())}</b>${scope!=='all'?`<b>${esc(names[scope]||scope)}</b>`:''}${search?`<b>Поиск: ${esc(search)}</b>`:''}<button class="btn mini" data-reset-context>Сбросить</button>`;main.prepend(bar);bar.querySelector('[data-reset-context]').onclick=()=>{currentProject='all';scope='all';search='';selectedTaskId=null;selectedProjectId=null;document.querySelector('#search').value='';renderAll(false);updateUrl()}}
+function contextBar(main){if(view==='board')return;if(hosted&&['home','mine'].includes(view)){if(!isAdmin()||view==='mine'||!search)return;const bar=document.createElement('div');bar.className='context-bar';bar.innerHTML='<span>Поиск по всем проектам:</span><b></b><button class="btn mini">Сбросить поиск</button>';bar.querySelector('b').textContent=search;bar.querySelector('button').onclick=()=>{search='';document.querySelector('#search').value='';renderMain();updateUrl()};main.prepend(bar);return;}const names={today:'Срок сегодня',overdue:'Просрочено',blocked:'Заблокировано',week:'Ближайшие 7 дней',risks:'Риски',approval:'Ждут решения',critical:'Критический путь'};const active=currentProject!=='all'||(scope!=='all'&&!isWorkView(view))||!!search||(isWorkView(view)&&assigneeFilter!=='all');if(!active)return;const bar=document.createElement('div');bar.className='context-bar';bar.innerHTML=`<span>Показано:</span><b>${esc(contextName())}</b>${scope!=='all'?`<b>${esc(names[scope]||scope)}</b>`:''}${isWorkView(view)&&assigneeFilter!=='all'?`<b>${esc(taskPeopleOptions().find(o=>o.key===assigneeFilter)?.label||'Исполнитель')}</b>`:''}${search?`<b>Поиск: ${esc(search)}</b>`:''}<button class="btn mini" data-reset-context>Сбросить</button>`;main.prepend(bar);bar.querySelector('[data-reset-context]').onclick=()=>{currentProject='all';scope='all';assigneeFilter='all';search='';selectedTaskId=null;selectedProjectId=null;document.querySelector('#search').value='';renderAll(false);updateUrl()}}
 let lastRenderedView=null;
-function renderMain(){const renderKey=[view,isWorkView(view)?currentProject:'',isWorkView(view)?scope:'',search].join('|');const saved=lastRenderedView===renderKey?captureSurface(document.querySelector('#main')):null;renderMainContent();restoreSurface(document.querySelector('#main'),saved);lastRenderedView=renderKey;}
+function renderMain(){const renderKey=[view,isWorkView(view)?currentProject:'',isWorkView(view)?scope:'',isWorkView(view)?assigneeFilter:'',search].join('|');const saved=lastRenderedView===renderKey?captureSurface(document.querySelector('#main')):null;renderMainContent();restoreSurface(document.querySelector('#main'),saved);lastRenderedView=renderKey;}
 function renderMainContent(){documentsUI.cancelRender();const main=document.querySelector('#main');if(!main)return;main.classList.remove('has-workbar');if(hq){hqSaved={key:hqKey(),view:hq.view};hq.destroy();hq=null}if(view==='board'){main.innerHTML='<div class="loading-state">Открываю доску…</div>';window.dispatchEvent(new CustomEvent('living-hq:open-board'));return}const items=filteredTasks();if(view==='home'&&hosted)workflow.home(main);else if(view==='mine'&&hosted)workflow.mine(main);else if(view==='awaiting'&&hosted)workflow.awaiting(main);else if(view==='notifications'&&hosted)workflow.notifications(main);else if(view==='archive'&&hosted)workflow.archive(main);else if(view==='home')renderHome(main,items);else if(view==='list')renderList(main,items);else if(view==='kanban')renderKanban(main,items);else if(view==='calendar')renderCalendar(main,items);else if(view==='people')renderPeople(main,items);else if(view==='problems')teamUI.problems(main);else if(view==='docs'&&isAdmin())documentsUI.render(main).then(()=>{if(view==='docs'&&history.state?.scroll)main.querySelector('.main-scroll')?.scrollTo(0,history.state.scroll);});else if(view==='integrations')teamUI.integrations(main);else renderHQ(main,items);workBar(main);contextBar(main)}
 function taskStatusChip(t){const st=effectiveStatus(t),auto=st==='blocked'&&t.status!=='blocked';return`<span class="status-chip status-${st}">${statusName(st)}${auto?' · авто':''}</span>`}
 function nextAction(p){const tasks=projectTasks(p.id).filter(t=>effectiveStatus(t)!=='done').sort((a,b)=>{const ar=isRisk(a)?0:1,br=isRisk(b)?0:1;return ar-br||(a.dueDate||'9999').localeCompare(b.dueDate||'9999')});return tasks[0]}
