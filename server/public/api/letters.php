@@ -90,13 +90,30 @@ function letter_signature(object $b): array {
     if(!$size||!in_array($size[2],[IMAGETYPE_PNG,IMAGETYPE_JPEG],true)||$size[0]>4000||$size[1]>4000)fail(400,'Не удалось прочитать изображение подписи. Максимальная сторона: 4000 пикселей.');
     return ['image'=>$image,'signerName'=>$name,'signerRole'=>$role];
 }
+// Placement uses percentages of the A4 sheet, with aspect ratio preserved.
+function letter_placement(mixed $value,array $signature,array $template): ?array {
+    if($value===null)return null;
+    if(!is_object($value)&&!is_array($value))fail(400,'Проверьте положение подписи.');
+    $p=(array)$value;$out=[];
+    foreach(['x','y','width'] as $key){$n=$p[$key]??null;if(!is_int($n)&&!is_float($n))fail(400,'Проверьте положение подписи.');if(!is_finite((float)$n))fail(400,'Проверьте положение подписи.');$out[$key]=round((float)$n,4);}
+    $image=getimagesizefromstring(base64_decode(explode(',',$signature['image'],2)[1],true));
+    $pageRatio=$template['orientation']==='landscape'?1123/794:794/1123;
+    $height=$out['width']*$pageRatio*$image[1]/$image[0];
+    if($out['width']<3||$out['width']>50||$out['x']<0||$out['y']<0||$out['x']+$out['width']>100.01||$out['y']+$height>100.01)fail(400,'Подпись выходит за границы листа. Уменьшите ее или переместите.');
+    return $out;
+}
 function letter_change(array $me,object $b): array {
     $action=(string)prop($b,'action','');$pdo=db();$pdo->beginTransaction();
     try {
         $r=letter_access($me,(string)prop($b,'id',''));
         if((int)prop($b,'revision',-1)!==(int)$r['revision'])fail(409,'Письмо уже изменилось. Откройте его заново перед действием.');
         $status=$r['status'];$approval=$r['approval_json'];$fields=$r['fields_json'];$note=$r['note'];$title=$r['title'];$recipients=[];
-        if($action==='save'){
+        if($action==='delete'){
+            if(!in_array($status,['draft','returned'],true))fail(409,'Удалять можно только черновики и письма, возвращенные на доработку.');
+            $st=$pdo->prepare('DELETE FROM letters WHERE id=? AND revision=?');$st->execute([$r['id'],$r['revision']]);
+            if($st->rowCount()!==1)fail(409,'Письмо изменилось. Откройте список заново.');
+            q('DELETE FROM letter_events WHERE letter_id=?',[$r['id']]);$pdo->commit();return ['ok'=>true,'deletedId'=>$r['id']];
+        } elseif($action==='save'){
             if(!in_array($status,['draft','returned'],true))fail(409,'Сначала верните письмо в черновики. Согласованная версия защищена от правок.');
             $fields=json_encode(letter_fields($b),JSON_FLAGS);$title=trim(clip(prop($b,'title',''),200))?:'Благодарственное письмо';$approval=null;
         } elseif($action==='submit'){
@@ -107,7 +124,15 @@ function letter_change(array $me,object $b): array {
             require_admin($me);if($status!=='pending')fail(409,'На согласовании уже другая версия письма');
             $sig=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$sig)fail(400,'Сначала загрузите изображение подписи и укажите подписанта');
             if(!hash_equals(hash('sha256',$sig['data_json']),(string)prop($b,'signatureVersion','')))fail(409,'Подпись изменилась. Проверьте ее и согласуйте письмо заново.');
-            $snapshot=json_decode($sig['data_json'],true)+['approvedBy'=>$me['email'],'approvedName'=>$me['name'],'approvedAt'=>now(),'signedRevision'=>(int)$r['revision']+1];
+            $signature=json_decode($sig['data_json'],true);$template=letter_template($r['template_id']);
+            $placement=letter_placement(prop($b,'placement'),$signature,$template);
+            if($placement!==null){
+                $signature['placements'][$r['template_id']]=$placement;
+                $st=$pdo->prepare('UPDATE letter_signatures SET data_json=? WHERE email=? AND data_json=?');
+                $newSignature=json_encode($signature,JSON_FLAGS);$st->execute([$newSignature,$me['email'],$sig['data_json']]);
+                if($newSignature!==$sig['data_json']&&$st->rowCount()!==1)fail(409,'Подпись изменилась. Откройте ее настройки заново.');
+            }
+            $snapshot=array_intersect_key($signature,array_flip(['image','signerName','signerRole']))+['placement'=>$placement,'approvedBy'=>$me['email'],'approvedName'=>$me['name'],'approvedAt'=>now(),'signedRevision'=>(int)$r['revision']+1];
             $approval=json_encode($snapshot,JSON_FLAGS);$status='approved';$note='';$recipients=[$r['author']];
         } elseif($action==='return'){
             require_admin($me);if($status!=='pending')fail(409,'Письмо сейчас не на согласовании');$note=trim(clip(prop($b,'note',''),2000));if(!$note)fail(400,'Напишите, что нужно исправить');$status='returned';$approval=null;$recipients=[$r['author']];
@@ -128,11 +153,12 @@ function letter_order(array $f): string {
     $date=$date?('«'.substr($date,8,2).'» '.$months[(int)substr($date,5,2)-1].' '.substr($date,0,4).' г.'):'«____» ________________ 20___ г.';
     return 'Приказ № '.(($f['orderNumber']??'')?:'_____').' от '.$date;
 }
-function letter_render(array $template,array $fields,?array $approval,bool $print=false,string $title='Благодарственное письмо'): array {
+function letter_render(array $template,array $fields,?array $approval,bool $print=false,string $title='Благодарственное письмо',bool $signatureEditor=false): array {
     $nonce=base64_encode(random_bytes(18));
     $csp="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'nonce-$nonce'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; sandbox allow-scripts allow-modals";
     $d=letter_dom($template['html']);$css='';foreach(iterator_to_array($d->getElementsByTagName('style')) as $s){$css.=$d->saveHTML($s);$s->parentNode->removeChild($s);}
     $body=$d->getElementsByTagName('body')->item(0);$fragment=$body?letter_inner($body):'';
+    $placement=$approval['placement']??null;
     $defaults=json_decode($template['defaults_json'],true);$names=$fields['recipients']?:['Имя Отчество Фамилия'];if(!$print)$names=array_slice($names,0,1);
     $pages='';foreach($names as $index=>$name){
         $page=letter_dom('<html><body>'.$fragment.'</body></html>');
@@ -141,7 +167,7 @@ function letter_render(array $template,array $fields,?array $approval,bool $prin
             if($key==='signature'){if($approval){$im=$page->createElement('img');$im->setAttribute('data-letter-signature','');$im->setAttribute('alt','Подпись');$im->setAttribute('style','max-width:100%;max-height:70px;object-fit:contain');$n->appendChild($im);}}
             else $n->appendChild($page->createTextNode($values[$key]??''));
         }
-        $pages.='<div class="letter-wrap"><div class="letter-paper">'.letter_inner($page->getElementsByTagName('body')->item(0)).(!$approval?'<div class="letter-draft">Черновик · без подписи</div>':'').'</div></div>';
+        $pages.='<div class="letter-wrap"><div class="letter-paper">'.letter_inner($page->getElementsByTagName('body')->item(0)).($signatureEditor?'<div class="letter-draft">Предпросмотр подписи · не согласовано</div>':(!$approval?'<div class="letter-draft">Черновик · без подписи</div>':'')).'</div></div>';
         if(strlen($pages)>24*1024*1024)fail(413,'Комплект слишком большой. Разделите получателей на несколько писем.');
     }
     $land=$template['orientation']==='landscape';$w=$land?1123:794;$h=$land?794:1123;$pageSize=$land?'297mm 210mm':'210mm 297mm';$pageW=$land?'297mm':'210mm';$pageH=$land?'210mm':'297mm';
@@ -158,9 +184,10 @@ function fit(){
  if(parent!==window)parent.postMessage({type:'letter-layout',fits,ready},'*');
 }
 window.addEventListener('resize',fit);Promise.all([document.fonts.ready,...[...document.images].map(i=>i.decode().catch(()=>{}))]).then(()=>{ready=true;fit()});fit();
-document.getElementById('letter-print')?.addEventListener('click',async()=>{await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode().catch(()=>{})));fit();if(fits)window.print()});
+document.getElementById('letter-print')?.addEventListener('click',async()=>{await signatureLayoutReady;await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode().catch(()=>{})));fit();if(fits)window.print()});
 JS;
-    $html.='<script nonce="'.$nonce.'">'.$js.'</script></body></html>';return ['html'=>$html,'csp'=>$csp];
+    $layoutScript='const signatureEditor='.($signatureEditor?'true':'false').';const initialPlacement='.json_encode($placement,JSON_FLAGS).';'.file_get_contents(__DIR__.'/letter-assets/signature-layout.js');
+    $html.='<script nonce="'.$nonce.'">'.$js.$layoutScript.'</script></body></html>';return ['html'=>$html,'csp'=>$csp];
 }
 function handle_letters(string $path,string $method,array $me): void {
     if(!str_starts_with($path,'/api/letter'))return;
@@ -174,7 +201,7 @@ function handle_letters(string $path,string $method,array $me): void {
     }
     if($path==='/api/letter-signature'){
         require_admin($me);if($method==='GET'){$s=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);send_json($s?(json_decode($s['data_json'],true)+['version'=>hash('sha256',$s['data_json'])]):null);}
-        if($method==='POST'){$sig=letter_signature(read_json());$pdo=db();$pdo->beginTransaction();try{q('DELETE FROM letter_signatures WHERE email=?',[$me['email']]);q('INSERT INTO letter_signatures VALUES (?,?)',[$me['email'],json_encode($sig,JSON_FLAGS)]);$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}send_json(['ok'=>true,'version'=>hash('sha256',json_encode($sig,JSON_FLAGS))]);}
+        if($method==='POST'){$sig=letter_signature(read_json());$old=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);$previous=$old?json_decode($old['data_json'],true):[];if(($previous['image']??'')===$sig['image']&&isset($previous['placements']))$sig['placements']=$previous['placements'];$pdo=db();$pdo->beginTransaction();try{q('DELETE FROM letter_signatures WHERE email=?',[$me['email']]);q('INSERT INTO letter_signatures VALUES (?,?)',[$me['email'],json_encode($sig,JSON_FLAGS)]);$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}send_json(['ok'=>true,'version'=>hash('sha256',json_encode($sig,JSON_FLAGS))]);}
     }
     if($path==='/api/letters'){
         if($method==='GET'){
@@ -186,6 +213,15 @@ function handle_letters(string $path,string $method,array $me): void {
             q('INSERT INTO letters VALUES (?,?,?,?,?,?,?,?,?,?,?)',[$id,$t['id'],$me['email'],$t['name'],'draft',json_encode($fields,JSON_FLAGS),1,null,'',now(),now()]);
             send_json(letter_public(letter_access($me,$id)));
         }send_json(letter_change($me,$b));}
+    }
+    if($path==='/api/letter-signature-preview'&&$method==='POST'){
+        require_admin($me);$b=read_json();$r=letter_access($me,(string)prop($b,'id'));
+        if((int)prop($b,'revision',-1)!==(int)$r['revision']||$r['status']!=='pending')fail(409,'Письмо изменилось. Откройте его заново.');
+        $stored=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$stored)fail(400,'Сначала загрузите подпись.');
+        $sig=json_decode($stored['data_json'],true);$template=letter_template($r['template_id']);
+        $sig['placement']=letter_placement($sig['placements'][$r['template_id']]??null,$sig,$template);
+        $out=letter_render($template,json_decode($r['fields_json'],true),$sig,false,$r['title'],true);
+        send_json(['html'=>$out['html'],'signatureVersion'=>hash('sha256',$stored['data_json']),'orientation'=>$template['orientation']]);
     }
     if($path==='/api/letter-preview'&&$method==='POST'){
         $b=read_json();$t=letter_template((string)prop($b,'templateId'));$f=letter_fields($b);$out=letter_render($t,$f,null);send_json(['html'=>$out['html']]);

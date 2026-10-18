@@ -33,6 +33,8 @@ jobs:
         run: for f in server/public/api/*.php; do php -l "$f"; done
       - name: Check one-time role migration
         run: php server/test/role-migrations.php
+      - name: Check task deletion and stale saves
+        run: php server/test/task-deletion.php
       - name: Check letter layouts and rendering
         run: php server/test/letters.php
       - name: Build the site folder

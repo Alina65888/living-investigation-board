@@ -18,6 +18,11 @@ expect(str_contains($preview['html'],'data:font/woff2'),'embedded fonts retained
 expect(str_contains($preview['html'],'--letter-logo'),'built-in logo retained');
 $png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1cAAAAASUVORK5CYII=';
 $sig=letter_signature((object)['image'=>$png,'signerName'=>'Тест','signerRole'=>'Председатель']);
+expect(letter_placement((object)['x'=>40,'y'=>60,'width'=>20],$sig,$template)===['x'=>40.0,'y'=>60.0,'width'=>20.0],'placement is normalized');
+rejects(fn()=>letter_placement((object)['x'=>90,'y'=>90,'width'=>50],$sig,$template),400);
+rejects(fn()=>letter_placement((object)['x'=>'10','y'=>10,'width'=>20],$sig,$template),400);
+$editor=letter_render($template,$fields,$sig,false,'Test',true);
+expect(str_contains($editor['html'],'Предпросмотр подписи · не согласовано'),'signature editor is not an approved letter');
 $print=letter_render($template,$fields,$sig,true);
 expect(substr_count($print['html'],'class="letter-wrap"')===2,'one page per recipient');
 expect(substr_count($print['html'],'alt="Подпись"')===2,'signature on each approved page');

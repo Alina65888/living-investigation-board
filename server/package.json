@@ -7,6 +7,7 @@
     "build": "node build.mjs",
     "test": "node --test test/*.test.mjs",
     "test:roles": "php test/role-migrations.php",
+    "test:deletion": "php test/task-deletion.php",
     "test:letters": "php test/letters.php"
   }
 }

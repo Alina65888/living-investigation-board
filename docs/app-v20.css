@@ -429,3 +429,5 @@ li.ok{background:#eaf2e6;color:#2f6239;font-weight:700}
 
 .assignee-select{min-width:0}.assignee-select select{max-width:240px}.home-assignee-select{margin-bottom:16px;flex-wrap:wrap}.home-assignee-select select{max-width:100%}
 @media(max-width:600px){.work-bar .scope-select{flex:1 1 145px;min-width:0;flex-direction:column;align-items:stretch;gap:4px}.work-bar .scope-select select{width:100%;max-width:100%;box-sizing:border-box}.home-assignee-select{align-items:stretch;flex-direction:column}.home-assignee-select select{width:100%;box-sizing:border-box}}
+
+.task-delete{color:#983d35!important;font-size:13px!important;white-space:nowrap;min-height:40px}.my-top .task-delete{margin-left:auto}.kan-tags .task-delete{order:10;margin-left:auto}.task-primary-actions .task-delete{margin-left:auto}
