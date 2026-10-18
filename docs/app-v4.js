@@ -1,15 +1,15 @@
-import {assigneeOptions,matchesAssignee} from './task-assignees.js?v=59';
-import {bindDraft,draftKey} from './drafts.js?v=59';
-import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=59';
-import {createWorkflow} from './task-workflow.js?v=59';
-import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=59';
-import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=59';
-import {createTeamUI} from './team-ui.js?v=59'
-import {authGate,openAccount} from './auth-ui.js?v=59'
-import {createDocumentsUI} from './documents.js?v=59';
-import {HQView} from './hq.js?v=59'
-import {LINKS} from './corkboard.js?v=59';
-import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=59';
+import {assigneeOptions,matchesAssignee} from './task-assignees.js?v=60';
+import {bindDraft,draftKey} from './drafts.js?v=60';
+import {dailyTasks,captureSurface,restoreSurface} from './journey-state.js?v=60';
+import {createWorkflow} from './task-workflow.js?v=60';
+import {greeting,gauge,accentMenu,bindAccentMenu} from './theme.js?v=60';
+import {api,hosted,session,isAdmin,canEditTask,canonicalName,loadWorkspace,saveWorkspace,isPending,hasConflict,settle,TEAM_URL} from './workspace-store.js?v=60';
+import {createTeamUI} from './team-ui.js?v=60'
+import {authGate,openAccount} from './auth-ui.js?v=60'
+import {createDocumentsUI} from './documents.js?v=60';
+import {HQView} from './hq.js?v=60'
+import {LINKS} from './corkboard.js?v=60';
+import {slackByTask, criticalChain, projectProgress as computeProgress, wouldCreateCycle} from './schedule.js?v=60';
 
 const DB_NAME='living-project-hq', STORE='workspace', KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На проверке'],['done','Готово']];

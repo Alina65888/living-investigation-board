@@ -1,5 +1,5 @@
-import {bindDraft,draftKey} from './drafts.js?v=59';
-import {hosted,TEAM_URL,session,isAdmin,api,canEditTask} from './workspace-store.js?v=59';
+import {bindDraft,draftKey} from './drafts.js?v=60';
+import {hosted,TEAM_URL,session,isAdmin,api,canEditTask} from './workspace-store.js?v=60';
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const date=s=>s?new Date(s+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'short'}):'Без срока';
 const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;

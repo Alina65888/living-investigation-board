@@ -1,5 +1,5 @@
 // Recipient files are read locally. Only the reviewed names are saved with a letter.
-import {crc32} from './docgen.js?v=59';
+import {crc32} from './docgen.js?v=60';
 
 export const MAX_RECIPIENTS=200;
 const MAX_FILE=5*1024*1024,MAX_UNPACKED=20*1024*1024,MAX_ROWS=5000,MAX_COLS=128;
