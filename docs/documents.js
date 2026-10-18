@@ -1,12 +1,12 @@
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=57';
-import * as G from './docgen.js?v=57';
-import {renderTemplateManager,templateBytes} from './template-editor.js?v=57';
-import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=57';
+import {loadDocs,saveDocs} from './workspace-store.js?v=58';
+import * as G from './docgen.js?v=58';
+import {renderTemplateManager,templateBytes} from './template-editor.js?v=58';
+import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=58';
 
-import {seedPearlBudget} from './pearl-budget.js?v=57';
-import {renderProjectBudget} from './project-budget-ui.js?v=57';
-import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=57';
+import {seedPearlBudget} from './pearl-budget.js?v=58';
+import {renderProjectBudget} from './project-budget-ui.js?v=58';
+import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=58';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
