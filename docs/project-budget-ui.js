@@ -1,9 +1,9 @@
-import * as G from './docgen.js?v=59';
-import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=59';
-import {estimateDocx,registryDocx} from './project-docx.js?v=59';
-import {projectCode,projectDocumentFilename} from './document-library.js?v=59';
-import {importBudgetDocx} from './project-budget-import.js?v=59';
-import {resolveSourcePrice} from './pearl-budget.js?v=59';
+import * as G from './docgen.js?v=60';
+import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=60';
+import {estimateDocx,registryDocx} from './project-docx.js?v=60';
+import {projectCode,projectDocumentFilename} from './document-library.js?v=60';
+import {importBudgetDocx} from './project-budget-import.js?v=60';
+import {resolveSourcePrice} from './pearl-budget.js?v=60';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const units=['услуга','штука','комплект','набор','час','день','месяц','поездка','экземпляр','рубль'];
 const field=(e,key,label,type='text')=>`<label class="field"><span>${label}</span><input data-budget-field="${key}" type="${type}" value="${esc(e[key]||'')}"></label>`;

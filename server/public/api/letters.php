@@ -125,13 +125,9 @@ function letter_change(array $me,object $b): array {
             $sig=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$sig)fail(400,'Сначала загрузите изображение подписи и укажите подписанта');
             if(!hash_equals(hash('sha256',$sig['data_json']),(string)prop($b,'signatureVersion','')))fail(409,'Подпись изменилась. Проверьте ее и согласуйте письмо заново.');
             $signature=json_decode($sig['data_json'],true);$template=letter_template($r['template_id']);
-            $placement=letter_placement(prop($b,'placement'),$signature,$template);
-            if($placement!==null){
-                $signature['placements'][$r['template_id']]=$placement;
-                $st=$pdo->prepare('UPDATE letter_signatures SET data_json=? WHERE email=? AND data_json=?');
-                $newSignature=json_encode($signature,JSON_FLAGS);$st->execute([$newSignature,$me['email'],$sig['data_json']]);
-                if($newSignature!==$sig['data_json']&&$st->rowCount()!==1)fail(409,'Подпись изменилась. Откройте ее настройки заново.');
-            }
+            // Approval always uses the saved template setting, never a per-letter override.
+            $placement=letter_placement($signature['placements'][$r['template_id']]??null,$signature,$template);
+            if($placement===null)fail(400,'Сначала настройте подпись для этого макета в библиотеке. Это нужно сделать один раз.');
             $snapshot=array_intersect_key($signature,array_flip(['image','signerName','signerRole']))+['placement'=>$placement,'approvedBy'=>$me['email'],'approvedName'=>$me['name'],'approvedAt'=>now(),'signedRevision'=>(int)$r['revision']+1];
             $approval=json_encode($snapshot,JSON_FLAGS);$status='approved';$note='';$recipients=[$r['author']];
         } elseif($action==='return'){
@@ -215,13 +211,29 @@ function handle_letters(string $path,string $method,array $me): void {
         }send_json(letter_change($me,$b));}
     }
     if($path==='/api/letter-signature-preview'&&$method==='POST'){
-        require_admin($me);$b=read_json();$r=letter_access($me,(string)prop($b,'id'));
-        if((int)prop($b,'revision',-1)!==(int)$r['revision']||$r['status']!=='pending')fail(409,'Письмо изменилось. Откройте его заново.');
+        require_admin($me);$b=read_json();$template=letter_template((string)prop($b,'templateId'));
         $stored=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$stored)fail(400,'Сначала загрузите подпись.');
-        $sig=json_decode($stored['data_json'],true);$template=letter_template($r['template_id']);
-        $sig['placement']=letter_placement($sig['placements'][$r['template_id']]??null,$sig,$template);
-        $out=letter_render($template,json_decode($r['fields_json'],true),$sig,false,$r['title'],true);
+        $sig=json_decode($stored['data_json'],true);
+        $sig['placement']=letter_placement($sig['placements'][$template['id']]??null,$sig,$template);
+        $defaults=json_decode($template['defaults_json'],true);
+        $fields=['recipients'=>['Иванову Ивану Ивановичу'],'body'=>$defaults['body']??'','orderNumber'=>'1','orderDate'=>'2026-01-01'];
+        $out=letter_render($template,$fields,$sig,false,$template['name'],true);
         send_json(['html'=>$out['html'],'signatureVersion'=>hash('sha256',$stored['data_json']),'orientation'=>$template['orientation']]);
+    }
+    if($path==='/api/letter-signature-layout'&&$method==='POST'){
+        require_admin($me);$b=read_json();$template=letter_template((string)prop($b,'templateId'));
+        $pdo=db();$pdo->beginTransaction();
+        try{
+            $stored=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$stored)fail(400,'Сначала загрузите подпись.');
+            if(!hash_equals(hash('sha256',$stored['data_json']),(string)prop($b,'signatureVersion','')))fail(409,'Подпись или ее положение изменились. Откройте настройки макета заново.');
+            $sig=json_decode($stored['data_json'],true);$placement=letter_placement(prop($b,'placement'),$sig,$template);
+            if($placement===null)fail(400,'Укажите положение подписи на макете.');
+            $sig['placements'][$template['id']]=$placement;$json=json_encode($sig,JSON_FLAGS);
+            $st=$pdo->prepare('UPDATE letter_signatures SET data_json=? WHERE email=? AND data_json=?');$st->execute([$json,$me['email'],$stored['data_json']]);
+            if($json!==$stored['data_json']&&$st->rowCount()!==1)fail(409,'Подпись изменилась. Откройте настройки макета заново.');
+            $pdo->commit();
+        }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+        send_json(['ok'=>true,'version'=>hash('sha256',$json),'placement'=>$placement]);
     }
     if($path==='/api/letter-preview'&&$method==='POST'){
         $b=read_json();$t=letter_template((string)prop($b,'templateId'));$f=letter_fields($b);$out=letter_render($t,$f,null);send_json(['html'=>$out['html']]);
