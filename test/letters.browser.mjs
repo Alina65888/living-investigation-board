@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdir,readFile} from 'node:fs/promises';
+import {recipientWorkbook,batchNames} from './recipient-workbook.mjs';
 const require=createRequire(import.meta.url),{chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const base=process.env.BASE||'http://127.0.0.1:8790';
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE,args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -18,7 +19,26 @@ try{
  await call(member,'/api/letter-templates',{name:'Bad',html:'x'},403);
  const p=await member.newPage();p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.goto(base+'/letters.html');await p.getByRole('heading',{name:'Благодарственные письма',exact:true}).waitFor();
  assert.equal(await p.locator('[data-tab="signature"]').count(),0);
- await p.locator('[data-new]').click();await p.locator('[data-use="mant-v1"]').click();await p.locator('[name=recipients]').fill('Иванову Ивану Ивановичу\nПетровой Анне Сергеевне');await p.locator('[name=title]').fill('Письма участникам проекта');await p.locator('[name=orderNumber]').fill('15');await p.locator('[name=orderDate]').fill('2026-03-02');await p.locator('[data-save]').click();
+ await p.locator('[data-new]').click();await p.locator('[data-use="mant-v1"]').click();
+ const workbook=await recipientWorkbook();
+ await p.locator('[name=recipients]').fill('Существующему Получателю');
+ await p.locator('[data-import-recipients]').click();
+ await p.locator('[data-recipient-file]').setInputFiles({name:'recipients.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:workbook});
+ await p.locator('[data-import-names]').waitFor();
+ assert.equal(await p.locator('[data-name-mode]').inputValue(),'split');
+ assert.equal(await p.locator('[data-import-names]').inputValue(),'Иванову Ивану Ивановичу\nПетровой Анне\nПетровой Анне');
+ assert.match(await p.locator('[data-import-count]').innerText(),/Повторяющихся ФИО: 1/);
+ assert.match(await p.locator('[data-source-info]').innerText(),/пропущено: 1/);
+ await p.locator('[data-sheet]').selectOption('2');assert.equal(await p.locator('[data-import-apply]').isDisabled(),true);assert.match(await p.locator('[data-import-error]').innerText(),/сохраненного результата/);
+ await p.locator('[data-sheet]').selectOption('0');
+ assert.equal(await p.locator('[data-column-settings]').getAttribute('open'),null,'recognized columns stay out of the way');await p.setViewportSize({width:390,height:844});await p.screenshot({path:dir+'/recipient-import-mobile.png'});assert.ok(await p.evaluate(()=>document.querySelector('.recipient-import').scrollWidth<=document.querySelector('.recipient-import').clientWidth),'mobile import fits');await p.setViewportSize({width:1280,height:900});
+ await p.locator('[data-import-apply]').click();assert.equal((await p.locator('[name=recipients]').inputValue()).split('\n').length,4,'append preserves existing names and namesakes');
+ const localId=new URL(p.url()).searchParams.get('letter');assert.equal((await call(member,'/api/letters?id='+localId)).fields.recipients.length,0,'import remains local until saved');
+ await p.locator('[data-import-recipients]').click();
+ await p.locator('[data-recipient-file]').setInputFiles({name:'large.txt',mimeType:'text/plain',buffer:Buffer.from(Array(201).fill('Получателю').join('\n'))});await p.locator('[data-import-error]').filter({hasText:'201'}).waitFor();assert.equal(await p.locator('[data-import-apply]').isDisabled(),true);
+ await p.locator('.dialog [data-close]').click();assert.equal((await p.locator('[name=recipients]').inputValue()).split('\n').length,4,'cancel leaves editor unchanged');
+ await p.locator('[data-import-recipients]').click();await p.locator('[data-recipient-file]').setInputFiles({name:'recipients.csv',mimeType:'text/csv',buffer:Buffer.from('ФИО;Проект\nИванову Ивану Ивановичу;МАНТ\nПетровой Анне Сергеевне;МАНТ')});await p.locator('[data-import-action]').selectOption('replace');await p.locator('[data-import-apply]').click();
+ assert.equal(await p.locator('[name=recipients]').inputValue(),'Иванову Ивану Ивановичу\nПетровой Анне Сергеевне');await p.locator('[name=title]').fill('Письма участникам проекта');await p.locator('[name=orderNumber]').fill('15');await p.locator('[name=orderDate]').fill('2026-03-02');await p.locator('[data-save]').click();
  await p.waitForFunction(()=>document.querySelector('[data-save-info]')?.textContent==='Все изменения сохранены');
  const id=new URL(p.url()).searchParams.get('letter');let l=await call(member,'/api/letters?id='+id);assert.equal(l.fields.recipients.length,2);
  let html=await call(member,`/api/letter-render?id=${id}&revision=${l.revision}`);assert.ok(html.includes('«02» марта 2026'));assert.ok(!html.includes('alt="Подпись"'));
@@ -49,7 +69,12 @@ try{
  const sp=await member.newPage();await sp.goto(base+'/letters.html');let outgoing=[],blocked=[];sp.on('response',r=>{if(r.url().includes('example.invalid'))outgoing.push(r.url())});sp.on('requestfailed',r=>{if(r.url().includes('example.invalid'))blocked.push(r.failure()?.errorText)});await sp.locator('[data-tab="library"]').click();await sp.locator(`[data-template-preview="${custom.id}"]`).click();await sp.locator('.dialog iframe').waitFor();await sp.waitForTimeout(600);assert.deepEqual(outgoing,[]);assert.ok(blocked.every(x=>/csp/i.test(x)),JSON.stringify(blocked));assert.equal(await sp.evaluate(()=>window.hacked),undefined);
  await call(boss,'/api/letter-templates',{name:'Без полей',html:'<p>Текст</p>'},400);
  await call(member,'/api/letter-preview',{templateId:'mant-v1',fields:{recipients:['Тест'],orderDate:'2026-02-31'}},400);
- await call(member,'/api/letter-preview',{templateId:'mant-v1',fields:{recipients:Array(51).fill('Тест')}},400);
+ await call(member,'/api/letter-preview',{templateId:'mant-v1',fields:{recipients:Array(201).fill('Тест')}},400);
  if(process.env.LETTER_SOURCE){const original=await readFile(process.env.LETTER_SOURCE,'utf8');const imported=await call(boss,'/api/letter-templates',{name:'Загруженный образец МАНТ',html:original,orientation:'landscape'});const ts=await call(boss,'/api/letter-templates');const sample=ts.find(t=>t.id===imported.id);assert.ok(sample.defaults.body.startsWith('за активное участие'));assert.equal(sample.defaults.signerName,'В. В. Шаталов');}
- assert.deepEqual(errors,[]);console.log('PASS letters: library, draft, live preview, submission, return, signature upload, approval, print/PDF, revision conflict, revoke, immutable approval snapshot, permissions, malicious HTML isolation, mobile');
+ // The whole file becomes one saved, approved and printable 200-page batch.
+ const bp=await member.newPage();bp.on('pageerror',e=>errors.push(e.message));await bp.goto(base+'/letters.html');await bp.locator('[data-new]').click();await bp.locator('[data-use="mant-v1"]').click();await bp.locator('[data-import-recipients]').click();await bp.locator('[data-recipient-file]').setInputFiles({name:'all.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:workbook});await bp.locator('[data-sheet]').selectOption('1');await bp.locator('[data-import-apply]').click();
+ assert.equal((await bp.locator('[name=recipients]').inputValue()).split('\n').length,200);await bp.locator('[data-letter-form] [type=submit]').click();await bp.locator('.status.pending').waitFor();
+ const batchId=new URL(bp.url()).searchParams.get('letter');let batch=await call(member,'/api/letters?id='+batchId);assert.deepEqual(batch.fields.recipients,batchNames);const storedSignature=await call(boss,'/api/letter-signature');batch=await call(boss,'/api/letters',{action:'approve',id:batchId,revision:batch.revision,signatureVersion:storedSignature.version});
+ const batchPage=await member.newPage();await batchPage.goto(base+`/api/letter-render?id=${batchId}&revision=${batch.revision}&mode=print`,{timeout:60000});await batchPage.waitForFunction(()=>!document.getElementById('letter-print').disabled);await batchPage.evaluate(()=>document.fonts.ready);assert.equal(await batchPage.locator('.letter-wrap').count(),200);assert.equal(await batchPage.locator('[data-field=recipient]').last().textContent(),batchNames.at(-1));assert.equal(await batchPage.locator('img[data-letter-signature]').count(),200);assert.ok(await batchPage.locator('img[data-letter-signature]').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0)),'every letter has a visible signature');await batchPage.pdf({path:dir+'/batch-200.pdf',preferCSSPageSize:true,printBackground:true,timeout:60000});
+ assert.deepEqual(errors,[]);console.log('PASS letters: Excel/CSV/TXT import, mapping, duplicates, cancel/append/replace, 200-recipient approval and PDF; library, draft, live preview, submission, return, signature upload, approval, print/PDF, revision conflict, revoke, immutable approval snapshot, permissions, malicious HTML isolation, mobile');
 }finally{await browser.close()}

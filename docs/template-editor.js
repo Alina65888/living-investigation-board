@@ -1,7 +1,7 @@
 // Local Word editing for approved NPD and business templates. No document contents
 // are sent to a third-party service; active/previous versions live in /api/docs.
-import * as G from './docgen.js?v=57';
-import {loadTemplate,templateName,contractAvailability} from './docx-templates.js?v=57';
+import * as G from './docgen.js?v=58';
+import {loadTemplate,templateName,contractAvailability} from './docx-templates.js?v=58';
 
 const enc=new TextEncoder(),dec=new TextDecoder();
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';

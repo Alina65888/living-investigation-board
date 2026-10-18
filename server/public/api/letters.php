@@ -72,8 +72,9 @@ function letter_template(string $id): array {return one('SELECT * FROM letter_te
 function letter_access(array $me,string $id): array {$r=one('SELECT * FROM letters WHERE id=?',[$id])??fail(404,'Письмо не найдено');if($me['role']!=='admin'&&$r['author']!==$me['email'])fail(403,'Письмо доступно автору и администратору');return $r;}
 function letter_fields(object $body): array {
     $x=prop($body,'fields');if(!is_object($x))fail(400,'Заполните поля письма');
-    $names=prop($x,'recipients',[]);if(!is_array($names)||count($names)>50)fail(400,'В одном комплекте может быть до 50 получателей.');
-    $names=array_values(array_filter(array_map(fn($n)=>trim(clip($n,200)),$names),fn($n)=>$n!==''));
+    $names=prop($x,'recipients',[]);if(!is_array($names)||count($names)>200)fail(400,'В одном комплекте может быть до 200 получателей.');
+    foreach($names as $i=>$name)if(!is_string($name)||mb_strlen($name)>200)fail(400,'Проверьте ФИО в строке '.($i+1).': не более 200 символов.');
+    $names=array_values(array_filter(array_map('trim',$names),fn($n)=>$n!==''));
     $date=clip(prop($x,'orderDate',''),10);if($date!==''&&(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)substr($date,5,2),(int)substr($date,8,2),(int)substr($date,0,4))))fail(400,'Проверьте дату приказа');
     return ['recipients'=>$names,'body'=>clip(prop($x,'body',''),2200),'orderNumber'=>clip(prop($x,'orderNumber',''),80),'orderDate'=>$date];
 }
@@ -137,7 +138,7 @@ function letter_render(array $template,array $fields,?array $approval,bool $prin
         $page=letter_dom('<html><body>'.$fragment.'</body></html>');
         $values=['recipient'=>$name,'body'=>$fields['body'],'order'=>letter_order($fields),'orderNumber'=>$fields['orderNumber'],'orderDate'=>$fields['orderDate'],'signerName'=>$approval['signerName']??$defaults['signerName']??'','signerRole'=>$approval['signerRole']??$defaults['signerRole']??''];
         foreach(letter_nodes($page,'//*[@data-field]') as $n){$key=$n->getAttribute('data-field');while($n->firstChild)$n->removeChild($n->firstChild);
-            if($key==='signature'){if($approval){$im=$page->createElement('img');$im->setAttribute('src',$approval['image']);$im->setAttribute('alt','Подпись');$im->setAttribute('style','max-width:100%;max-height:70px;object-fit:contain');$n->appendChild($im);}}
+            if($key==='signature'){if($approval){$im=$page->createElement('img');$im->setAttribute('data-letter-signature','');$im->setAttribute('alt','Подпись');$im->setAttribute('style','max-width:100%;max-height:70px;object-fit:contain');$n->appendChild($im);}}
             else $n->appendChild($page->createTextNode($values[$key]??''));
         }
         $pages.='<div class="letter-wrap"><div class="letter-paper">'.letter_inner($page->getElementsByTagName('body')->item(0)).(!$approval?'<div class="letter-draft">Черновик · без подписи</div>':'').'</div></div>';
@@ -147,7 +148,7 @@ function letter_render(array $template,array $fields,?array $approval,bool $prin
     $metaCsp=str_replace('; sandbox allow-scripts allow-modals','',$csp);
     $head='<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="'.htmlspecialchars($metaCsp,ENT_QUOTES).'">';
     $html=$head.'<title>'.htmlspecialchars($title).'</title>'.$css.'<style>html,body{margin:0;background:#e9e6df} .letter-wrap{position:relative;margin:16px auto;overflow:hidden;background:white} .letter-paper{position:absolute;left:0;top:0;width:'.$w.'px;height:'.$h.'px;transform-origin:0 0;overflow:hidden} .letter-draft{position:absolute;bottom:6px;left:0;right:0;text-align:center;font:12px Arial;color:#6c6257;z-index:2147483647} [data-field="recipient"]{max-width:94%;white-space:nowrap} [data-field="body"]{white-space:pre-line} [data-field="signature"] img{max-width:100%;max-height:70px} #letter-tools{padding:14px;font:15px/1.5 Arial;background:#fff;position:sticky;top:0;z-index:2147483647} #letter-tools button{font:inherit;padding:10px 16px;cursor:pointer} @page{size:'.$pageSize.';margin:0} @media print{html,body{background:white}#letter-tools{display:none!important}.letter-wrap{width:'.$pageW.'!important;height:'.$pageH.'!important;margin:0;break-after:page;page-break-after:always}.letter-wrap:last-child{break-after:auto;page-break-after:auto}.letter-paper{transform:none!important}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>'.($print?'<div id="letter-tools"><button id="letter-print">Печать / сохранить в PDF</button> А4 · '.($land?'альбомная':'книжная').' · поля «Нет» · масштаб 100% · фоновая графика включена<span id="letter-overflow" role="alert"></span></div>':'').$pages;
-    $js='const w='.$w.',h='.$h.';'.<<<'JS'
+    $js='const w='.$w.',h='.$h.';const signatureImage='.json_encode($approval['image']??null,JSON_FLAGS|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).';document.querySelectorAll("img[data-letter-signature]").forEach(i=>i.src=signatureImage);'.<<<'JS'
 let fits=true,ready=false;
 function fit(){
  document.querySelectorAll('[data-field=recipient]').forEach(n=>{let size=parseFloat(getComputedStyle(n).fontSize);while(n.scrollWidth>Math.min(w-100,n.clientWidth)&&size>15)n.style.fontSize=(--size)+'px';if(n.scrollWidth>Math.min(w-100,n.clientWidth)){n.style.whiteSpace='normal';n.style.overflowWrap='anywhere'}});
@@ -156,7 +157,7 @@ function fit(){
  const note=document.getElementById('letter-overflow'),btn=document.getElementById('letter-print');if(note)note.textContent=fits?'':' Текст не помещается на лист. Вернитесь к письму, сократите текст и согласуйте правки.';if(btn)btn.disabled=!fits;
  if(parent!==window)parent.postMessage({type:'letter-layout',fits,ready},'*');
 }
-window.addEventListener('resize',fit);document.fonts.ready.then(()=>{ready=true;fit()});fit();
+window.addEventListener('resize',fit);Promise.all([document.fonts.ready,...[...document.images].map(i=>i.decode().catch(()=>{}))]).then(()=>{ready=true;fit()});fit();
 document.getElementById('letter-print')?.addEventListener('click',async()=>{await document.fonts.ready;await Promise.all([...document.images].map(i=>i.decode().catch(()=>{})));fit();if(fits)window.print()});
 JS;
     $html.='<script nonce="'.$nonce.'">'.$js.'</script></body></html>';return ['html'=>$html,'csp'=>$csp];
