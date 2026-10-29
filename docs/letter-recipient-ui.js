@@ -1,4 +1,4 @@
-import {readRecipientFile,suggestColumns,recipientsFromSheet,nameLines,checkNames,duplicateCount,MAX_RECIPIENTS} from './letter-recipients.js?v=60';
+import {readRecipientFile,suggestColumns,recipientsFromSheet,nameLines,checkNames,duplicateCount,MAX_RECIPIENTS} from './letter-recipients.js?v=61';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const columnName=n=>{let s='';for(n++;n>0;n=Math.floor((n-1)/26))s=String.fromCharCode(65+(n-1)%26)+s;return s;};
 

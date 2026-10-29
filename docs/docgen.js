@@ -231,7 +231,7 @@ export function unzipStored(buf) {
 }
 
 // Word output uses the original, anonymized Office packages.
-export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=60';
+export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=61';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------
@@ -351,5 +351,6 @@ export function documentSet(exec) {
   if (exec.kind === 'org' || exec.kind === 'ip') list.push({ id: 'invoice', title: 'Счёт на оплату', ext: 'docx' });
   list.push({ id: 'act', title: 'Акт', ext: 'docx' });
   if (exec.kind === 'org' || exec.kind === 'ip') list.push({ id: 'upd', title: 'УПД', ext: 'xlsx' });
+  if (['org','ip','npd'].includes(exec.kind)) list.push({id:'payment',title:'Платежное поручение',ext:'xls'});
   return list;
 }

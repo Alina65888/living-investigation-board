@@ -40,11 +40,11 @@ export function counterpartyName(p={}) {
 }
 const numberLabel=n=>!n||/^(б[\/\s-]?н|без номера)$/i.test(String(n).trim())?'БН':'№ '+String(n).trim().replace(/^№\s*/,'');
 export function documentFilename(kind,d,p,project={}) {
-  const type={contract:'Договор',invoice:'Счет',act:'Акт',upd:'УПД'}[kind];
+  const type={contract:'Договор',invoice:'Счет',act:'Акт',upd:'УПД',payment:'Платежное поручение'}[kind];
   if(!type)throw new Error('Неизвестный документ');
-  const date=kind==='invoice'?(d.invoiceDate||d.date):kind==='upd'?(d.updDate||d.actDate||d.deadline||d.date):kind==='act'?(d.actDate||d.deadline||d.date):d.date;
-  const number=kind==='act'?'':kind==='invoice'?(d.invoiceNumber||d.number):kind==='upd'?(d.updNumber||d.number):d.number;
+  const date=kind==='payment'?d.paymentDate:kind==='invoice'?(d.invoiceDate||d.date):kind==='upd'?(d.updDate||d.actDate||d.deadline||d.date):kind==='act'?(d.actDate||d.deadline||d.date):d.date;
+  const number=kind==='payment'?d.paymentNumber:kind==='act'?'':kind==='invoice'?(d.invoiceNumber||d.number):kind==='upd'?(d.updNumber||d.number):d.number;
   const code=String(d.projectCode||projectCode(project)||'').trim();
   const label=[date?date.replace(/-/g,'.'):'Без даты',type,numberLabel(number),counterpartyName(p),code?'('+code+')':''].filter(Boolean).join(' ');
-  return label.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').trim().replace(/[. ]+$/,'')+(kind==='upd'?'.xlsx':'.docx');
+  return label.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').replace(/\s+/g,' ').trim().replace(/[. ]+$/,'')+(kind==='payment'?'.xls':kind==='upd'?'.xlsx':'.docx');
 }
