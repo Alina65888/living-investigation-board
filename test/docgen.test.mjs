@@ -42,8 +42,8 @@ test('requisites checks catch real-life mistakes', () => {
 });
 
 test('documents per executor status', () => {
-  assert.deepEqual(G.documentSet(npd).map(d => d.id), ['contract', 'act']);
-  assert.deepEqual(G.documentSet(org).map(d => d.id), ['contract', 'invoice', 'act', 'upd']);
+  assert.deepEqual(G.documentSet(npd).map(d => d.id), ['contract', 'act', 'payment']);
+  assert.deepEqual(G.documentSet(org).map(d => d.id), ['contract', 'invoice', 'act', 'upd', 'payment']);
 });
 
 const bufferOf = path => { const b = readFileSync(new URL(path, import.meta.url)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); };

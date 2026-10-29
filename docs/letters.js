@@ -1,8 +1,8 @@
-import {api,apiUrl,auth,hosted} from './workspace-store.js?v=60';
-import {signatureLayoutDialog} from './letter-signature-ui.js?v=60';
-import {authGate} from './auth-ui.js?v=60';
-import {recipientImportDialog} from './letter-recipient-ui.js?v=60';
-import {nameLines,MAX_RECIPIENTS,checkNames} from './letter-recipients.js?v=60';
+import {api,apiUrl,auth,hosted} from './workspace-store.js?v=61';
+import {signatureLayoutDialog} from './letter-signature-ui.js?v=61';
+import {authGate} from './auth-ui.js?v=61';
+import {recipientImportDialog} from './letter-recipient-ui.js?v=61';
+import {nameLines,MAX_RECIPIENTS,checkNames} from './letter-recipients.js?v=61';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const root=document.querySelector('#app'),labels={draft:'Черновик',pending:'На согласовании',returned:'Нужны правки',approved:'Подписано'};
 let templates=[],letters=[],me=null,current=null,dirty=false,previewTimer,previewGeneration=0,tab='letters',signature=null,working=false,reviewLetterId=null;
