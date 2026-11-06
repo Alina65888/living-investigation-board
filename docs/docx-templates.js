@@ -1,5 +1,5 @@
 // Fill the approved Word packages without rebuilding their styles, sections or tables.
-import * as G from './docgen.js?v=61';
+import * as G from './docgen.js?v=62';
 
 const encode = new TextEncoder(), decode = new TextDecoder();
 const xml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
@@ -10,9 +10,19 @@ const cache = new Map();
 // Transaction type and legal status are independent. One service layout handles
 // both business statuses; dynamic party fields provide their different requisites.
 const CONTRACT_TEMPLATES = {
-  services: {npd:'services', ip:'services-business', org:'services-business'},
+  services: {person:'services-gph', npd:'services', ip:'services-business', org:'services-business'},
   supply: {ip:'supply-ip', org:'supply-org'},
 };
+const GPH_TERMS={
+  monthly:'в размере 100% ежемесячной оплаты в течение 15 календарных дней с момента окончания расчетного месяца',
+  act:'в размере 100% оплаты в течение 15 (Пятнадцати) календарных дней с момента подписания Акта об оказании услуг',
+};
+const validGphRate=d=>!String(d.gphTaxRate??'').trim()||(/^\d{1,2}(?:[.,]\d{1,2})?$/.test(String(d.gphTaxRate))&&Number(String(d.gphTaxRate).replace(',','.'))>0);
+function gphTax(d){
+  if(!validGphRate(d))throw Error('Проверьте ставку НДФЛ или оставьте поле пустым.');
+  const rate=String(d.gphTaxRate??'').trim().replace('.',',');
+  return 'Сумма указана с учетом НДФЛ'+(rate?' ('+rate+'%)':'')+'.';
+}
 const paymentTerms = (type, executor) => type === 'services' && executor?.kind === 'npd'
   ? 'в течение 15 (Пятнадцати) календарных дней с момента подписания Акта об оказании услуг'
   : 'в течение 15 (Пятнадцати) рабочих дней с момента подписания Акта об исполнении обязательств и/или УПД';
@@ -26,6 +36,7 @@ export function templateName(kind, deal, executor) {
 export function contractTemplateInfo(deal, executor) {
   const name = templateName('contract', deal, executor);
   if (!name) return null;
+  if(name==='services-gph')return {title:'Услуги — ГПХ с физическим лицом',payment:Object.hasOwn(GPH_TERMS,deal.gphPayment)?'Оплата '+GPH_TERMS[deal.gphPayment]+'.':'Выберите срок оплаты на шаге 2.'};
   const status = {npd:'самозанятый', ip:'ИП', org:'организация (ООО, НКО)'}[executor.kind];
   return {title:G.DEAL_TYPES[deal.type].short+' — '+status, payment:'Оплата 100% '+paymentTerms(deal.type,executor).replace(' (Пятнадцати)','')+'.'};
 }
@@ -72,7 +83,7 @@ function partyData(p, side, role, tail) {
 
 function dataFor(deal, customer, executor) {
   const t = G.DEAL_TYPES[deal.type], total = G.sumItems(deal.items);
-  const period = deal.period ? ' ' + G.padDateDays(deal.period) : '', reference = `Договору ${t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
+  const period = deal.period ? ' ' + G.padDateDays(deal.period) : '', reference = `Договору ${executor.kind==='person'&&deal.type==='services'?'возмездного оказания услуг':t.title} № ${deal.number} от ${G.longDate(deal.date).replace(/ г\.$/, ' года')}`;
   const customerBy = deal.type === 'supply' ? 'Покупателем' : 'Заказчиком';
   const executorBy = deal.type === 'supply' ? 'Поставщиком' : deal.type === 'works' ? 'Подрядчиком' : 'Исполнителем';
   const businessPeriod=G.padDateDays(deal.period||'').trim().replace(/^в период\s+/i,'').replace(/ г\.$/,' года');
@@ -116,7 +127,7 @@ function dataFor(deal, customer, executor) {
     actDate: G.longDate(deal.actDate || deal.deadline || deal.date),
     actIntro: 'совместно именуемые «Стороны», составили настоящий акт, в дальнейшем «Акт», о нижеследующем:',
     actDelivery: `1. Обязательства ${t.execGen} по ${reference}${period} выполнены в полном объеме в соответствии с Приложением № 1 – Спецификация № 1.`,
-    actPayment: `2. Стоимость ${t.objGen.toLowerCase()} составляет: ${G.amountWithWords(total)} ${G.vatLine(total, executor)} ${deal.paid ? `Оплачена ${customerBy} в полном объеме.` : 'Оплата производится в соответствии с п. 3.2 Договора.'}`,
+    actPayment: `2. Стоимость ${t.objGen.toLowerCase()} составляет: ${G.amountWithWords(total)} ${executor.kind==='person'&&deal.type==='services'?gphTax(deal):G.vatLine(total, executor)} ${deal.paid ? `Оплачена ${customerBy} в полном объеме.` : 'Оплата производится в соответствии с п. 3.2 Договора.'}`,
     actClaims: '3. Акт подтверждает отсутствие претензий к объему и качеству исполнения и составлен в двух экземплярах, имеющих одинаковую юридическую силу, по одному для каждой из Сторон.',
   };
 }
@@ -148,6 +159,13 @@ function fillItems(document, items, approved=false) {
 export function contractAvailability(deal, customer, executor) {
   if(!customer||!executor)return {message:'Выберите заказчика и исполнителя.',step:1,field:!customer?'customerId':'executorId',action:'Выбрать стороны'};
   if(customer.kind!=='org')return {message:'В предоставленных образцах заказчик — организация. Проверьте карточку заказчика.',step:1,party:'customerId',action:'Проверить заказчика'};
+  if(executor.kind==='person'){
+    if(deal.type!=='services')return {message:'Образец ГПХ с физлицом предоставлен только для услуг.',step:2,field:'type',action:'Выбрать услуги'};
+    if(!executor.fio?.trim()||!executor.passport?.trim()||!/^\d{11}$/.test(String(executor.snils||'').replace(/[-\s]/g,'')))return {message:'Для ГПХ заполните ФИО, паспорт и СНИЛС (11 цифр) в карточке исполнителя.',step:1,party:'executorId',action:'Открыть реквизиты'};
+    if(!deal.period?.trim())return {message:'Укажите период оказания услуг по ГПХ.',step:2,field:'period',action:'Указать период'};
+    if(!Object.hasOwn(GPH_TERMS,deal.gphPayment))return {message:'Выберите срок оплаты по ГПХ: он будет одинаковым в договоре и спецификации.',step:2,field:'gphPayment',action:'Выбрать срок оплаты'};
+    if(!validGphRate(deal))return {message:'Проверьте ставку НДФЛ или оставьте поле пустым.',step:2,field:'gphTaxRate',action:'Проверить ставку'};
+  }
   if(!templateName('contract',deal,executor)){
     const commercial=['ip','org'].includes(executor.kind);
     return {message:commercial?'Для ИП и организаций доступны договоры услуг и поставки. Сейчас выбран другой тип сделки. Выберите подходящий предмет на шаге 2; статус контрагента менять не нужно.':executor.kind==='npd'?'Для самозанятого подключен ваш договор услуг. Проверьте тип сделки; для другого предмета нужен соответствующий образец.':'Среди предоставленных образцов нет договора с физлицом без статуса ИП или НПД. Проверьте карточку контрагента.',step:commercial||executor.kind==='npd'?2:1,...(commercial||executor.kind==='npd'?{field:'type'}:{party:'executorId'}),action:commercial||executor.kind==='npd'?'Проверить тип сделки':'Проверить контрагента'};
@@ -180,11 +198,21 @@ function approvedContractData(deal, customer, executor) {
   };
 }
 
+function gphData(deal,customer,executor){
+  const period=G.padDateDays(deal.period).trim().replace(/^в период\s+/i,'');
+  const female=(executor.gender||G.personGender(executor.fio))==='f';
+  return {...dataFor(deal,customer,executor),gphPerson:(female?'Гражданка ':'Гражданин ')+executor.fio,
+    gphPersonTail:', '+(female?'именуемая':'именуемый')+' в дальнейшем «Исполнитель», с одной стороны, и ',
+    gphCustomerTail:G.partyPreamble(customer,'Заказчик').slice(customer.name.length+2)+', с другой стороны, ',
+    gphSubject:G.padDateDays(deal.subject)+' в период '+period.replace(/ г\.$/,' года'),gphPeriod:period,
+    gphTerms:GPH_TERMS[deal.gphPayment],gphTax:gphTax(deal),gphSnils:String(executor.snils).replace(/[-\s]/g,'').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1-$2-$3 $4')};
+}
+
 async function generate(kind, deal, customer, executor, buffer) {
   if(kind==='contract'){const issue=contractIssue(deal,customer,executor);if(issue)throw new Error(issue);}
   const files = G.unzipStored(buffer || await loadTemplate(templateName(kind, deal, executor)));
   if (!files['word/document.xml']) throw new Error('В шаблоне отсутствует документ Word');
-  const values = ['contract','act'].includes(kind)&&executor.kind==='npd'&&deal.type==='services'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
+  const values = kind==='contract'&&executor.kind==='person'?gphData(deal,customer,executor):['contract','act'].includes(kind)&&executor.kind==='npd'&&deal.type==='services'?approvedContractData(deal,customer,executor):dataFor(deal, customer, executor);
   for (const name of Object.keys(files)) {
     if (!/^word\/(document|header\d+|footer\d+)\.xml$/.test(name)) continue;
     // Fill scalar fields first so user-entered {{braces}} are never evaluated as placeholders.

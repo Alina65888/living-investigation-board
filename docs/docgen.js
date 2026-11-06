@@ -105,7 +105,7 @@ export const DEAL_TYPES = {
   works: { title: 'подряда', short: 'Подряд', exec: 'Подрядчик', execGen: 'Подрядчика', execDat: 'Подрядчику', cust: 'Заказчик', custGen: 'Заказчика', custDat: 'Заказчику', obj: 'Работы', objAcc: 'Работы', objGen: 'Работ', verb: 'выполнить', verbDone: 'выполнены', term: 'Срок выполнения работ', act: 'сдачи-приемки выполненных работ', actTitle: 'выполненных работ', draft: true },
   supply: { title: 'поставки', short: 'Поставка', exec: 'Поставщик', execGen: 'Поставщика', execDat: 'Поставщику', cust: 'Покупатель', custGen: 'Покупателя', custDat: 'Покупателю', obj: 'Товары', objAcc: 'Товары', objGen: 'Товара', verb: 'поставить', verbDone: 'поставлены', term: 'Срок поставки', act: 'приема-передачи товара', actTitle: 'поставленного товара' }
 };
-export const PARTY_KINDS = { org: 'Организация', ip: 'ИП', npd: 'Самозанятый', person: 'Физлицо' };
+export const PARTY_KINDS = { org: 'Организация', ip: 'ИП', npd: 'Самозанятый', person: 'Физлицо (ГПХ)' };
 
 // Who is the party and how it is introduced in the preamble.
 export function partyPreamble(p, role) {
@@ -165,6 +165,7 @@ export function checkParty(p) {
     if (!p.signer) out.push(`${who}: не указан руководитель, который подписывает документы.`);
   }
   if (p.kind === 'ip' && (!ogrnOk(p.ogrn) || digits(p.ogrn).length !== 15)) out.push(`${who}: ОГРНИП — 15 цифр с верной контрольной цифрой.`);
+  if (p.kind === 'person' && !/^\d{11}$/.test(String(p.snils||'').replace(/[-\s]/g,''))) out.push(`${who}: СНИЛС для договора ГПХ — 11 цифр.`);
   if (p.kind === 'npd' && (!p.npdDate || !p.npdNumber)) out.push(`${who}: укажите дату и номер постановки на учёт как плательщика НПД.`);
   if ((p.kind === 'npd' || p.kind === 'person') && !p.passport) out.push(`${who}: не указаны паспортные данные.`);
   if (p.account || p.bik) {
@@ -190,7 +191,7 @@ export function checkDeal(deal, customer, executor) {
   if (!deal.items?.length) out.push('В спецификации нет позиций.');
   deal.items?.forEach((it, i) => { if (!it.name || !(+it.qty > 0) || !(+it.price > 0)) out.push(`Позиция ${i + 1}: нужны наименование, количество и цена.`); });
   if (deal.deadline && deal.date && deal.deadline < deal.date) out.push('Срок исполнения раньше даты договора.');
-  if (executor?.kind === 'person') out.push('Договор с физлицом без статуса: организация удерживает НДФЛ 13% и платит страховые взносы. Уточните у бухгалтера.');
+  if (executor?.kind === 'person') out.push('Для ГПХ сумма указывается с учетом НДФЛ. Процент для текста договора задается на шаге 2.');
   if (deal.type === 'works') out.push('Шаблон договора подряда — черновик по образцу ваших договоров. Перед первым использованием покажите его юристу.');
   return out;
 }
@@ -231,7 +232,7 @@ export function unzipStored(buf) {
 }
 
 // Word output uses the original, anonymized Office packages.
-export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=61';
+export { contractDocx, invoiceDocx, actDocx, templateName, contractIssue, contractAvailability, contractTemplateInfo } from './docx-templates.js?v=62';
 const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 // ---------- UPD (fills docs/templates/upd.xlsx) ----------

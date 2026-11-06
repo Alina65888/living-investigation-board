@@ -1,5 +1,5 @@
-import {sumItems,numberWords,plural,shortDate,partyTitle,partyShortTitle,checkParty,vatPayer} from './docgen.js?v=61';
-import {fillPaymentXls} from './payment-xls.js?v=61';
+import {sumItems,numberWords,plural,shortDate,partyTitle,partyShortTitle,checkParty,vatPayer} from './docgen.js?v=62';
+import {fillPaymentXls} from './payment-xls.js?v=62';
 const text=v=>String(v??'').trim(),digits=v=>text(v).replace(/\s/g,''),blank=v=>v===undefined||v===null||v==='';
 export const paymentVariant=p=>p?.kind==='npd'?'npd':['org','ip'].includes(p?.kind)?'business':null;
 export const paymentBasis=(d,e)=>d.paymentBasis||(e?.kind==='npd'?'contract':'invoice');

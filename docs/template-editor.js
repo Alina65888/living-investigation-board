@@ -1,12 +1,12 @@
 // Local Word editing for approved NPD and business templates. No document contents
 // are sent to a third-party service; active/previous versions live in /api/docs.
-import * as G from './docgen.js?v=61';
-import {loadTemplate,templateName,contractAvailability} from './docx-templates.js?v=61';
+import * as G from './docgen.js?v=62';
+import {loadTemplate,templateName,contractAvailability} from './docx-templates.js?v=62';
 
 const enc=new TextEncoder(),dec=new TextDecoder();
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const MAX_BYTES=2*1024*1024;
-export const EDITABLE_TEMPLATES={services:'Договор и спецификация СЗН','act-npd':'Акт СЗН','supply-ip':'Поставка — договор и спецификация ИП','services-business':'Услуги — договор и спецификация ИП и ООО','invoice-ip':'Счет ИП','invoice-org':'Счет ООО'};
+export const EDITABLE_TEMPLATES={'services-gph':'ГПХ — договор и спецификация физлица',services:'Договор и спецификация СЗН','act-npd':'Акт СЗН','supply-ip':'Поставка — договор и спецификация ИП','services-business':'Услуги — договор и спецификация ИП и ООО','invoice-ip':'Счет ИП','invoice-org':'Счет ООО'};
 const documentKind=key=>key.startsWith('invoice-')?'invoice':key==='act-npd'?'act':'contract';
 const docParts=name=>/^word\/(document|header\d+|footer\d+)\.xml$/.test(name);
 const parse=s=>{if(/<!DOCTYPE|<!ENTITY/i.test(s))throw new Error('Файл содержит неподдерживаемую структуру XML.');const d=new DOMParser().parseFromString(s,'application/xml');if(d.querySelector('parsererror'))throw new Error('Не удалось прочитать структуру Word. Сохраните файл в формате DOCX.');return d;};
@@ -132,6 +132,9 @@ const sample={
 function sampleFor(key){
   const example=structuredClone(sample);
   if(key==='services'||key==='act-npd')return example;
+  if(key==='services-gph'){
+    Object.assign(example.executor,{kind:'person',snils:'000-000-000 00'});example.deal.gphPayment='act';return example;
+  }
   const ip=key==='supply-ip'||key==='invoice-ip';
   example.executor={...example.customer,kind:ip?'ip':'org',name:'Общество с ограниченной ответственностью «Пример»',shortName:'ООО «Пример»',fio:'Иванов Иван Иванович',signerPosition:'директор',inn:ip?'000000000000':'0000000000',ogrn:ip?'000000000000000':'0000000000000'};
   example.deal={...example.deal,type:ip?'supply':'services',subject:ip?'выставочных стендов для проекта «Пример»':'логистические услуги для проекта «Пример»',items:[{name:ip?'Выставочный стенд':'Логистические услуги',description:'Описание позиции для проверки шаблона.',unit:ip?'штука':'услуга',qty:2,price:1000}]};
