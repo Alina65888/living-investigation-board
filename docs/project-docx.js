@@ -1,6 +1,6 @@
-import * as G from './docgen.js?v=63';
-import {loadTemplate} from './docx-templates.js?v=63';
-import {budgetGroups,budgetIssues,registryRows} from './project-budget.js?v=63';
+import * as G from './docgen.js?v=64';
+import {loadTemplate} from './docx-templates.js?v=64';
+import {budgetGroups,budgetIssues,registryRows} from './project-budget.js?v=64';
 const enc=new TextEncoder(),dec=new TextDecoder();
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 const fill=(s,v)=>s.replace(/\{\{(\w+)\}\}/g,(_,k)=>{if(!Object.hasOwn(v,k))throw new Error('Не заполнено поле '+k);return String(v[k]??'').split(/\r?\n/).map(escape).join('</w:t><w:br/><w:t xml:space="preserve">');});
@@ -15,9 +15,9 @@ async function generate(template,values,makeRows,buffer){
 }
 export async function estimateDocx(e,customer,buffer){
  const issues=budgetIssues(e);if(issues.length)throw new Error(issues.join('\n'));
- return generate(e.format==='subsidy'?'estimate-subsidy':'estimate-competition',{...fields(e,customer),total:money(G.sumItems(e.items))},xml=>{
+ return generate(e.format==='competition'?'estimate-competition':'estimate-subsidy',{...fields(e,customer),total:money(G.sumItems(e.items))},xml=>{
   const section=prototype(xml,'section'),item=prototype(xml,'item'),subtotal=prototype(xml,'subtotal');
-  return budgetGroups(e).map(g=>fill(section,{sectionNumber:String(g.index+1)+(e.format==='subsidy'?'':'.'),sectionName:g.name})+(g.items.length?g.items:[null]).map((i,n)=>fill(item,{itemNumber:`${g.index+1}.${n+1}`,itemText:i?[i.name,i.description].filter(Boolean).join('\n'):'–',itemName:i?.name||'–',itemDescription:i?.description||'',itemUnit:i?.unit||'',itemQuantity:i?G.qty(i.qty):'',itemPrice:i?money(i.price):'',itemTotal:i?money(G.sumItems([i])):''})).join('')+fill(subtotal,{subtotal:money(g.total)})).join('');
+  return budgetGroups(e).map(g=>fill(section,{sectionNumber:String(g.index+1)+(e.format==='competition'?'.':''),sectionName:g.name})+(g.items.length?g.items:[null]).map((i,n)=>fill(item,{itemNumber:`${g.index+1}.${n+1}`,itemText:i?[i.name,i.description].filter(Boolean).join('\n'):'–',itemName:i?.name||'–',itemDescription:i?.description||'',itemUnit:i?.unit||'',itemQuantity:i?G.qty(i.qty):'',itemPrice:i?money(i.price):'',itemTotal:i?money(G.sumItems([i])):''})).join('')+fill(subtotal,{subtotal:money(g.total)})).join('');
  },buffer);
 }
 export async function registryDocx(e,deals,parties,customer,buffer){

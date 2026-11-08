@@ -21,3 +21,13 @@ test('unknown sections require mapping; missing numeric values remain empty',()=
  assert.equal(result.items[0].section,-1);assert.equal(result.items[0].sourceSection,'Мой раздел');assert.equal(result.items[0].qty,null);assert.equal(result.items[0].price,null);assert.ok(result.warnings.length);
  assert.throws(()=>parseBudgetTables([[['Фото сметы']]]),/Не найдена таблица/);
 });
+test('Стоимость за единицу is a price, not the unit column; forum sections and amount-only rows survive',()=>{
+ const h=['№ п/п','Наименование','Ед. изм.','Кол-во','Стоимость за единицу, руб.','Итоговая сумма, руб.'];
+ const rows=[h,['1','Изготовление раздаточной и полиграфической продукции','','','',''],['1.1','Баннер\nОписание баннера','штука','1','15 000,00','15 000,00'],['2','Фото- и видеосъемка мероприятия','','','',''],['2.1','Фотосъемка\nОписание съемки','услуга','1','30 000,00','30 000,00'],['3','Оплата труда привлеченных специалистов','','','',''],['3.1','Руководитель форума','услуга','1','20 000,00','20 000,00'],['3.2','ЕНП (7,6%)','','','','1 520,00'],['Общий ИТОГ:','','','','','66 520,00']];
+ const r=parseBudgetTables([rows]);assert.equal(r.format,'forum');assert.equal(r.items.length,4);assert.equal(r.items[0].unit,'штука');assert.equal(r.items[0].price,15000);assert.equal(r.items[0].description,'Описание баннера');assert.deepEqual(r.items.map(i=>i.section),[0,1,2,2]);assert.equal(r.items[3].qty,1);assert.equal(r.items[3].price,1520);assert.equal(r.items[3].sourceTotalOnly,true);assert.equal(r.items.reduce((s,i)=>s+i.qty*i.price,0),66520);assert.equal(r.warnings.length,1);assert.match(r.warnings[0],/только сумма/);
+});
+test('Amount-only rows without a number are not mistaken for section headings; invalid values are not guessed',()=>{
+ const h=['Наименование','Ед. изм.','Количество','Цена','Сумма'];
+ const r=parseBudgetTables([[h,['Оплата труда','','','',''],['Взносы','','','','1520'],['Неясная цена','услуга','?','','3000']]]);
+ assert.equal(r.items.length,2);assert.equal(r.items[0].price,1520);assert.equal(r.items[1].qty,null);assert.equal(r.items[1].price,null);assert.equal(r.items[1].sourceTotalOnly,undefined);
+});
