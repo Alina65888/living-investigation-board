@@ -1,10 +1,10 @@
-import {saveToDrive} from './google-drive.js?v=63';
-import * as G from './docgen.js?v=63';
-import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=63';
-import {estimateDocx,registryDocx} from './project-docx.js?v=63';
-import {projectCode,projectDocumentFilename} from './document-library.js?v=63';
-import {importBudgetDocx} from './project-budget-import.js?v=63';
-import {resolveSourcePrice} from './pearl-budget.js?v=63';
+import {saveToDrive} from './google-drive.js?v=64';
+import * as G from './docgen.js?v=64';
+import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=64';
+import {estimateDocx,registryDocx} from './project-docx.js?v=64';
+import {projectCode,projectDocumentFilename} from './document-library.js?v=64';
+import {importBudgetDocx} from './project-budget-import.js?v=64';
+import {resolveSourcePrice} from './pearl-budget.js?v=64';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const units=['услуга','штука','комплект','набор','час','день','месяц','поездка','экземпляр','рубль'];
 const field=(e,key,label,type='text')=>`<label class="field"><span>${label}</span><input data-budget-field="${key}" type="${type}" value="${esc(e[key]||'')}"></label>`;

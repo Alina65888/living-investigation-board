@@ -1,6 +1,6 @@
 // Import values from Word tables locally. A preview is required before persistence.
-import {BUDGET_FORMATS} from './project-budget.js?v=63';
-import {readWordZip} from './template-editor.js?v=63';
+import {BUDGET_FORMATS} from './project-budget.js?v=64';
+import {readWordZip} from './template-editor.js?v=64';
 const W='http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const norm=s=>String(s||'').toLowerCase().replace(/ё/g,'е').replace(/[^а-яa-z0-9]/g,'');
 const sectionKey=s=>norm(String(s||'').replace(/^\s*\d+[.)\s]+/,''));
@@ -13,9 +13,9 @@ function columns(cells){
  cells.forEach((s,i)=>{const n=norm(s);
   if(/наименован|статьярасход|название/.test(n))map.name=i;
   else if(/описание|характеристик|обоснован/.test(n))map.description=i;
+  else if(/цена|стоимость.*ед/.test(n))map.price=i;
   else if(/единиц|едизм/.test(n))map.unit=i;
   else if(/количеств|колво/.test(n))map.qty=i;
-  else if(/цена|стоимость.*ед|стоимостьед/.test(n))map.price=i;
   else if(/сумма|всего|общаястоимость/.test(n))map.total=i;
  });
  return ['name','unit','qty','price'].every(k=>map[k]!==undefined)?map:null;
@@ -23,6 +23,7 @@ function columns(cells){
 export function parseBudgetTables(tables,fallback='competition'){
  const scores=Object.fromEntries(Object.keys(BUDGET_FORMATS).map(k=>[k,0]));
  for(const rows of tables)for(const cells of rows)for(const cell of cells)for(const [key,format] of Object.entries(BUDGET_FORMATS))if(format.sections.some(s=>sectionKey(s)===sectionKey(cell)))scores[key]++;
+ if((scores.forum||0)<2)scores.forum=0;
  const best=Object.keys(scores).sort((a,b)=>scores[b]-scores[a])[0];
  const format=scores[best]>0?best:fallback,sections=BUDGET_FORMATS[format].sections,items=[],warnings=[],sourceTotals=[];
  let matchedTables=0;
@@ -42,13 +43,17 @@ export function parseBudgetTables(tables,fallback='competition'){
    const qty=budgetNumber(cells[map.qty]),price=budgetNumber(cells[map.price]);
    // Merged section headings contain no item quantities/prices. Keep the
    // original title so unfamiliar sections require an explicit mapping.
-   if(nonempty.length<=2&&label&&qty===null&&price===null){sourceSection=label;continue;}
+   if(nonempty.length<=2&&label&&qty===null&&price===null&&budgetNumber(cells[map.total])===null){sourceSection=label;continue;}
    const nameCell=String(cells[map.name]||'').trim();
    if(/^[—–-]$/.test(nameCell)&&[map.unit,map.qty,map.price,map.total].every(k=>!String(cells[k]||'').trim()))continue;
    if(!nameCell){warnings.push(`Таблица ${tableIndex+1}, строка ${rowIndex+1}: строка без наименования пропущена (${text.slice(0,120)}).`);continue;}
    const lines=nameCell.split('\n').map(s=>s.trim()).filter(Boolean);
    const item={section:sections.findIndex(s=>sectionKey(s)===sectionKey(sourceSection)),sourceSection,name:lines[0],description:[...lines.slice(1),cells[map.description]||''].filter(Boolean).join('\n'),unit:String(cells[map.unit]||'').trim(),qty,price};
    const total=budgetNumber(cells[map.total]);
+   if(total!==null&&qty===null&&price===null&&!String(cells[map.qty]||'').trim()&&!String(cells[map.price]||'').trim()){
+    Object.assign(item,{qty:1,price:total,unit:item.unit||'сумма',sourceTotalOnly:true});
+    warnings.push(`«${item.name}»: в Word указана только сумма ${total.toLocaleString('ru-RU')} ₽. Для сохранения итога перенесено как 1 × ${total.toLocaleString('ru-RU')} ₽; проверьте строку перед добавлением.`);
+   }
    if(total!==null&&qty!==null&&price!==null&&Math.abs(Math.round(qty*price*100)/100-total)>.009)item.sourceConflict={price,total,resolved:false};
    items.push(item);
    if(items.length>500)throw new Error('В одной загрузке может быть до 500 позиций. Разделите смету на несколько файлов.');
