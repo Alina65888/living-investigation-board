@@ -1,9 +1,10 @@
-import * as G from './docgen.js?v=62';
-import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=62';
-import {estimateDocx,registryDocx} from './project-docx.js?v=62';
-import {projectCode,projectDocumentFilename} from './document-library.js?v=62';
-import {importBudgetDocx} from './project-budget-import.js?v=62';
-import {resolveSourcePrice} from './pearl-budget.js?v=62';
+import {saveToDrive} from './google-drive.js?v=63';
+import * as G from './docgen.js?v=63';
+import {BUDGET_FORMATS,budgetFormat,budgetGroups,budgetItemLinks,lineAmount,projectDeals,registryRows} from './project-budget.js?v=63';
+import {estimateDocx,registryDocx} from './project-docx.js?v=63';
+import {projectCode,projectDocumentFilename} from './document-library.js?v=63';
+import {importBudgetDocx} from './project-budget-import.js?v=63';
+import {resolveSourcePrice} from './pearl-budget.js?v=63';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const units=['услуга','штука','комплект','набор','час','день','месяц','поездка','экземпляр','рубль'];
 const field=(e,key,label,type='text')=>`<label class="field"><span>${label}</span><input data-budget-field="${key}" type="${type}" value="${esc(e[key]||'')}"></label>`;
@@ -93,6 +94,6 @@ export function renderProjectBudget(main,{estimate:e,folder,data,view='estimate'
   content.querySelectorAll('[data-reg-type]').forEach(el=>el.onchange=()=>{e.registerTypes=[...content.querySelectorAll('[data-reg-type]:checked')].map(x=>x.dataset.regType);save();renderRegister();});
   content.querySelectorAll('[data-budget-deal]').forEach(b=>b.onclick=()=>openDeal(b.dataset.budgetDeal));
  }
- main.querySelector('[data-budget-download]').onclick=async ev=>{if(busy)return;busy=true;ev.target.disabled=true;error('');try{if(!e.customerId)throw new Error('Выберите нашу организацию в разделе «Оформление и реквизиты».');if(!/^\d{4}$/.test(String(e.year)))throw new Error('Укажите год проекта.');await flush();const blob=view==='register'?await registryDocx(e,data.deals,data.parties,customer()):await estimateDocx(e,customer());download(blob,projectDocumentFilename(view==='register'?'register':'estimate',folder,e.year));toast('Документ готов');}catch(err){error(err.message);}finally{busy=false;ev.target.disabled=false;}};
+ main.querySelector('[data-budget-download]').onclick=async ev=>{if(busy)return;busy=true;ev.target.disabled=true;error('');try{if(!e.customerId)throw new Error('Выберите нашу организацию в разделе «Оформление и реквизиты».');if(!/^\d{4}$/.test(String(e.year)))throw new Error('Укажите год проекта.');await flush();const blob=view==='register'?await registryDocx(e,data.deals,data.parties,customer()):await estimateDocx(e,customer());const name=projectDocumentFilename(view==='register'?'register':'estimate',folder,e.year);download(blob,name);toast('Документ готов');try{const result=await saveToDrive(blob,name,folder.id,e.year);if(!result.skipped)toast('Документ сохранён на Google Диске');}catch(err){error('Файл скачан, но копия на Google Диске не сохранена: '+err.message);}}catch(err){error(err.message);}finally{busy=false;ev.target.disabled=false;}};
  render();
 }

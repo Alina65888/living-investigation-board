@@ -37,6 +37,8 @@ jobs:
         run: php server/test/task-deletion.php
       - name: Check letter layouts and rendering
         run: php server/test/letters.php
+      - name: Check Google Drive security guards
+        run: php server/test/google-drive.php
       - name: Build the site folder
         run: node server/build.mjs
       - name: Attach the site folder for manual upload

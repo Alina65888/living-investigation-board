@@ -1,13 +1,14 @@
+import {openDriveManager,saveToDrive} from './google-drive.js?v=63';
 // «Документы»: party cards + deals → contract, invoice, act and UPD (docgen.js builds the files in the browser).
-import {loadDocs,saveDocs} from './workspace-store.js?v=62';
-import * as G from './docgen.js?v=62';
-import * as PP from './payment-orders.js?v=62';
-import {renderTemplateManager,templateBytes} from './template-editor.js?v=62';
-import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=62';
+import {loadDocs,saveDocs} from './workspace-store.js?v=63';
+import * as G from './docgen.js?v=63';
+import * as PP from './payment-orders.js?v=63';
+import {renderTemplateManager,templateBytes} from './template-editor.js?v=63';
+import {DEFAULT_FOLDERS,dealYear,documentFilename,projectCode,fillProjectCodes} from './document-library.js?v=63';
 
-import {seedPearlBudget} from './pearl-budget.js?v=62';
-import {renderProjectBudget} from './project-budget-ui.js?v=62';
-import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=62';
+import {seedPearlBudget} from './pearl-budget.js?v=63';
+import {renderProjectBudget} from './project-budget-ui.js?v=63';
+import {BUDGET_FORMATS,budgetFormat,itemsForDeal,refreshEstimateItems,budgetIssues} from './project-budget.js?v=63';
 
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const uid=()=>crypto.randomUUID?.()||Math.random().toString(36).slice(2)+Date.now().toString(36);
@@ -72,7 +73,7 @@ export function createDocumentsUI(ctx){
     if(editing?.kind==='party')return renderParty(main,editing.id);
     route();
     if(tab==='templates')return renderTemplateManager(main,{data,toast:ctx.toast,back:()=>{tab='deals';render(main);},save:updateTemplates});
-    main.innerHTML=`<div class="main-scroll docs-page"><div class="page-head"><div><div class="eyebrow">Договоры · счета · акты · УПД</div><h1>Документы</h1>${!['all','inbox'].includes(currentProject())?`<p>${esc(workspace().projects.find(p=>p.id===currentProject())?.name||'Проект')} · <button class="link" data-all-docs>Все документы</button></p>`:''}<p>Карточки сторон заполняются один раз — дальше комплект документов собирается из сделки.</p></div><div class="docs-buttons"><button class="btn" data-open-templates>Шаблоны</button><button class="btn primary" data-new-deal >Создать документы</button></div></div>${loadError?`<div class="docs-warn">${esc(loadError)}</div>`:''}<div class="docs-tabs" role="tablist"><button class="${tab==='deals'?'active':''}" data-tab="deals">Сделки <span>${visibleDeals().length}</span></button><button class="${tab==='parties'?'active':''}" data-tab="parties">Организации и контрагенты <span>${parties().length}</span></button></div>${tab==='deals'?folderList()+estimatesList()+dealsList():partiesList()}</div>`;
+    main.innerHTML=`<div class="main-scroll docs-page"><div class="page-head"><div><div class="eyebrow">Договоры · счета · акты · УПД</div><h1>Документы</h1>${!['all','inbox'].includes(currentProject())?`<p>${esc(workspace().projects.find(p=>p.id===currentProject())?.name||'Проект')} · <button class="link" data-all-docs>Все документы</button></p>`:''}<p>Карточки сторон заполняются один раз — дальше комплект документов собирается из сделки.</p></div><div class="docs-buttons"><button class="btn" data-open-drive>Google Диск</button><button class="btn" data-open-templates>Шаблоны</button><button class="btn primary" data-new-deal >Создать документы</button></div></div>${loadError?`<div class="docs-warn">${esc(loadError)}</div>`:''}<div class="docs-tabs" role="tablist"><button class="${tab==='deals'?'active':''}" data-tab="deals">Сделки <span>${visibleDeals().length}</span></button><button class="${tab==='parties'?'active':''}" data-tab="parties">Организации и контрагенты <span>${parties().length}</span></button></div>${tab==='deals'?folderList()+estimatesList()+dealsList():partiesList()}</div>`;
     main.querySelectorAll('[data-folder]').forEach(b=>b.onclick=()=>{folderId=b.dataset.folder;folderYear='';folderForm=false;render(main)});
     main.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{folderYear=b.dataset.year;render(main)});
     main.querySelectorAll('[data-doc-org]').forEach(b=>b.onclick=()=>{folderOrg=b.dataset.docOrg;folderId='';folderYear='';render(main)});
@@ -81,6 +82,7 @@ export function createDocumentsUI(ctx){
     main.querySelector('[data-folder-form]')?.addEventListener('submit',e=>{e.preventDefault();const form=new FormData(e.target),existing=data.folders.find(f=>f.id===folderId);const f=existing||{id:uid()};Object.assign(f,{organization:form.get('organization'),name:String(form.get('name')).trim(),code:String(form.get('code')).trim()});if(!f.name)return;f.code=projectCode(f);if(!existing)data.folders.push(f);folderId=f.id;folderOrg=f.organization;folderForm=false;persist();render(main)});
     main.querySelector('[data-all-docs]')?.addEventListener('click',()=>ctx.showAll?.());
     main.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render(main)});
+    main.querySelector('[data-open-drive]')?.addEventListener('click',()=>openDriveManager({folders:data.folders,flush,toast:ctx.toast}));
     main.querySelector('[data-open-templates]')?.addEventListener('click',async()=>{try{await flush();tab='templates';render(main);}catch(e){ctx.toast(e.message);}});
     main.querySelector('[data-new-deal]')?.addEventListener('click',()=>{newDeal();render(main);});
     main.querySelector('[data-new-estimate]')?.addEventListener('click',()=>{newEstimate();render(main);});
@@ -261,6 +263,7 @@ export function createDocumentsUI(ctx){
       const file=documentFilename(kind,d,e,fileProject(d));
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=file;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
       ctx.toast(`Готово: ${file}`);
+      try{await flush();const result=await saveToDrive(blob,file,d.folderId,dealYear(d));if(!result.skipped)ctx.toast('Документ сохранён на Google Диске');}catch(error){ctx.toast('Файл скачан, но копия на Google Диске не сохранена: '+error.message);}
     }catch(err){ctx.toast(err.message)}
   }
   return {render,mountLinks,writeRoute,restoreRoute,flush,isPending:()=>dirty||pendingSaves>0,cancelRender(){renderGeneration++;},reset(){editing=null;tab='deals';folderId='';folderYear='';folderOrg='';}};
