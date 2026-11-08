@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/role-migrations.php';
 require_once __DIR__ . '/letters.php';
+require_once __DIR__ . '/google-drive.php';
 
 const SESSION_DAYS = 30;
 const MAX_FILE = 10 * 1024 * 1024;
@@ -741,6 +742,7 @@ function run(): void
         }
         if (in_array($path, ['/api/me', '/api/setup', '/api/login', '/api/logout'], true)) handle_auth($path, $method);
         $me = current_user() ?? fail(401, 'Войдите в аккаунт');
+        handle_google_drive($path, $method, $me);
         handle_letters($path, $method, $me);
         handle_api($path, $method, $me);
     } catch (HttpError $e) {

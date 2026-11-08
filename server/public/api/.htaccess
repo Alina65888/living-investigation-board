@@ -1,6 +1,6 @@
 # Only index.php is meant for the browser: block the files it includes.
 # A deny-list (not "deny all + allow index.php") so hostings that pass PHP to FPM do not answer 403.
-<FilesMatch "^(lib|config|config\.sample)\.php$">
+<FilesMatch "^(lib|config|config\.sample|google-drive(?:\.local|\.sample)?)\.php$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>

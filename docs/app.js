@@ -1,4 +1,4 @@
-import {HQView} from './hq.js?v=62';
+import {HQView} from './hq.js?v=63';
 
 const DB_NAME='living-project-hq',STORE='workspace',KEY='main';
 const STATUS=[['planned','Запланирована'],['doing','В работе'],['blocked','Заблокирована'],['approval','На согласовании'],['done','Выполнена']];

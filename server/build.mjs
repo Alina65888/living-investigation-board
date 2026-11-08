@@ -8,7 +8,7 @@ const here = import.meta.dirname, out = resolve(here, 'dist/site');
 rmSync(resolve(here, 'dist'), { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 cpSync(resolve(here, '../docs'), out, { recursive: true, filter: src => !/\.md$/.test(src) });
-cpSync(resolve(here, 'public'), out, { recursive: true, filter: src => !src.endsWith('/api/config.php') });
+cpSync(resolve(here, 'public'), out, { recursive: true, filter: src => !src.endsWith('/api/config.php') && !src.endsWith('/api/google-drive.local.php') });
 
 const email = (process.env.ADMIN_EMAIL || '').trim();
 if (email) {
