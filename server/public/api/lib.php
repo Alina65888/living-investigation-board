@@ -742,7 +742,15 @@ function run(): void
             if (strcasecmp($host, (string)($_SERVER['HTTP_HOST'] ?? '')) !== 0) fail(403, 'Запрос с другого сайта отклонён');
         }
         if (in_array($path, ['/api/me', '/api/setup', '/api/login', '/api/logout'], true)) handle_auth($path, $method);
-        $me = current_user() ?? fail(401, 'Войдите в аккаунт');
+        $me = current_user();
+        if ($path === '/api/festival-diploma' && $method === 'GET'
+            && (!$me || $me['must_change'])
+            && str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'text/html')) {
+            header('Cache-Control: no-store');
+            header('Location: /diplomas.html', true, 303);
+            exit;
+        }
+        if (!$me) fail(401, 'Войдите в аккаунт');
         handle_google_drive($path, $method, $me);
         handle_festival_diploma($path, $method, $me);
         handle_letters($path, $method, $me);
