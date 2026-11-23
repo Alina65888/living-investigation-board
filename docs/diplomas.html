@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Дипломы фестиваля · День иностранного студента</title>
+  <link rel="stylesheet" href="team-v17.css?v=18">
+  <link rel="stylesheet" href="letters.css?v=66">
+</head>
+<body>
+  <div id="app"><p class="letter-loading">Открываю дипломы фестиваля…</p></div>
+  <noscript>Для заполнения и сохранения дипломов включите JavaScript в браузере.</noscript>
+  <script type="module">
+    import {apiUrl, hosted, TEAM_URL} from './workspace-store.js?v=66';
+    import {authGate} from './auth-ui.js?v=66';
+
+    if (hosted) {
+      await authGate();
+      location.replace(apiUrl('/api/festival-diploma'));
+    } else {
+      const link = document.createElement('a');
+      link.className = 'button primary';
+      link.href = TEAM_URL + '/diplomas.html';
+      link.textContent = 'Открыть дипломы на командном сайте';
+      document.getElementById('app').replaceChildren(link);
+    }
+  </script>
+</body>
+</html>
