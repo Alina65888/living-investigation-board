@@ -5,6 +5,11 @@ class HttpError extends Exception{public function __construct(public int $status
 function fail(int $status,string $message):never{throw new HttpError($status,$message);}
 function check(bool $v,string $msg):void{if(!$v)throw new Exception($msg);}
 function reject(callable $fn):void{try{$fn();}catch(HttpError $e){check($e->status===400,'HTTP status');return;}throw new Exception('Expected invalid input');}
+$editor=festival_editor_html();
+check(!str_contains($editor, '<script src='), 'the downloadable HTML includes all scripts offline');
+foreach (['id="save-pdf"', 'id="all-pdf"', 'PDFLib.PDFDocument.create()', 'pdf-lib 1.17.1'] as $required) {
+    check(str_contains($editor, $required), 'PDF editor resource: '.$required);
+}
 $catalog=festival_catalog();check(count($catalog['records'])===24,'all 24 source diplomas');
 $b=json_decode(json_encode($catalog));$b->stamp=(object)['image'=>'','x'=>125,'y'=>246,'width'=>38];
 $clean=festival_validate($b);check($clean['records']===$catalog['records'],'source fields unchanged');
