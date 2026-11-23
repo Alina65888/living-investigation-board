@@ -627,6 +627,11 @@ function paint(row,ink){
   const issues=[];
   const put=(...args)=>draw(ink,issues,...args);
   const cx=297.6,name=row[row.mode].trim();
+  const nameWords=name.split(/[ \t]+/);
+  const nameBreak=nameWords.length===3?1:Math.ceil(nameWords.length/2);
+  const recipient=row.mode==='solo' && !name.includes('\n') && nameWords.length>=3
+    ? nameWords.slice(0,nameBreak).join(' ')+'\n'+nameWords.slice(nameBreak).join(' ')
+    : name;
   const members=row.mode==='group'?row.members.trim():'';
   const credits=[row.leader.trim() && 'Руководитель: '+row.leader.trim(),row.choreo.trim() && 'Хореограф: '+row.choreo.trim()].filter(Boolean).join('\n');
   const special=row.specialName.trim();
@@ -644,7 +649,7 @@ function paint(row,ink){
     verbBox=put('Формулировка награждения',row.verb,cx,verbY,535,27,20,{color:sourceRed});
   }
   if(!name)issues.push('Введите имя или название получателя.');
-  const blocks=[{label:'Получатель',text:name,size:members?23:26,gap:0,options:{family:bold,weight:700,leading:1.08}}];
+  const blocks=[{label:'Получатель',text:recipient,size:members?23:26,gap:0,options:{family:bold,weight:700,leading:1.08}}];
   if(members){
     blocks.push({label:'Состав',text:'в составе:',size:19,gap:16,options:{}});
     blocks.push({label:'Состав коллектива',text:members,size:23,gap:9,options:{family:bold,weight:700,leading:1.08}});

@@ -13,7 +13,7 @@ test('Festival source: all 24 filled records and embedded artwork/fonts are pres
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
 });
 
-test('Festival typography matches the supplied template with a vertically centered signer',()=>{
+test('Festival typography uses two-line long recipient names and a centered signer',()=>{
  const render=html.slice(html.indexOf('function wrap('),html.indexOf('function render()')).replace('  paintStamp(ink);\n','');
- assert.equal(createHash('sha256').update(render).digest('hex'),'b08353aca3efd63225205f1f4fc7a193cdff4f5ddc374edc857480a9c3341caa');
+ assert.equal(createHash('sha256').update(render).digest('hex'),'b99e782ffe79464a1a62c44ab7c24fbc304f63a46bbfc0ac9388b93dcf4ee236');
 });
