@@ -12,3 +12,8 @@ test('Festival source: all 24 filled records and embedded artwork/fonts are pres
  assert.equal(assets.length,8);assert.equal(createHash('sha256').update(assets.join('\n')).digest('hex'),'354c7330e8d18e9c36ff1791bed89f6ed3f7397d37b380358720221fd580c7af');
  for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))assert.doesNotThrow(()=>new vm.Script(match[1]));
 });
+
+test('Festival typography matches the updated supplied template',()=>{
+ const render=html.slice(html.indexOf('function wrap('),html.indexOf('function render()')).replace('  paintStamp(ink);\n','');
+ assert.equal(createHash('sha256').update(render).digest('hex'),'a2802378363102c6ffcbef25e5813173a06ea5e455be12314e05bcedb221580a');
+});

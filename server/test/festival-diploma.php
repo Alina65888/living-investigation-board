@@ -15,5 +15,10 @@ $b->stamp->image='data:image/svg+xml;base64,PHN2Zz4=';reject(fn()=>festival_vali
 $b->stamp->image='data:image/png;base64,aGVsbG8=';reject(fn()=>festival_validate($b));
 $b->stamp->image='';$b->stamp->x=205;reject(fn()=>festival_validate($b));
 $b->stamp->x=125;$b->stamp->y=295;reject(fn()=>festival_validate($b));
-$b->stamp->y=246;$b->records=array_slice($b->records,0,23);reject(fn()=>festival_validate($b));
+$b->stamp->y=246;
+$b->records[]=clone $b->records[1];$b->records[24]->solo='Новый участник';$b->records[24]->mode='solo';$b->active=24;
+$added=festival_validate($b);check(count($added['records'])===25 && $added['records'][24]['solo']==='Новый участник','new recipient saved');
+$b->records=array_fill(0,500,$b->records[0]);check(count(festival_validate($b)['records'])===500,'500 records accepted');
+$b->records[]=$b->records[0];reject(fn()=>festival_validate($b));
+$b->records=[];reject(fn()=>festival_validate($b));
 echo "Festival diploma source preservation and input guards passed.\n";
