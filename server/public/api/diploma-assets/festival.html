@@ -675,7 +675,7 @@ function paint(row,ink){
     top+=block.layout.height;
   }
   put('Должность подписанта',row.position,23.74,735,323,72,16,{anchor:'start',leading:1.125});
-  put('Имя подписанта',row.signer,567,724.9,206,50,16,{anchor:'end',baseline:730.96});
+  put('Имя подписанта',row.signer,567,735,206,50,16,{anchor:'end'});
   put('Место и год вручения',row.place,cx,800,535,34,18,{family:'Body,Arial,sans-serif',baseline:806.9});
   paintStamp(ink);
   return issues;
