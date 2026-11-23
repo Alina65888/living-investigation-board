@@ -7,7 +7,7 @@ function festival_catalog(): array {
 }
 function festival_validate(object $b): array {
     $source=festival_catalog();$keys=array_keys($source['records'][0]);
-    if(!is_array($b->records??null)||count($b->records)!==count($source['records']))fail(400,'Сохраните все 24 диплома комплекта');
+    if(!is_array($b->records??null)||count($b->records)<1||count($b->records)>500)fail(400,'В комплекте должно быть от 1 до 500 дипломов');
     $records=[];
     foreach($b->records as $r){
         if(!is_object($r)||!in_array($r->mode??'', ['solo','group'],true))fail(400,'Некорректный получатель');
