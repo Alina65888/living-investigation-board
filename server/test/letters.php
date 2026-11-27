@@ -4,8 +4,8 @@ require __DIR__.'/../public/api/lib.php';
 function expect(bool $ok,string $message): void {if(!$ok)throw new RuntimeException($message);}
 function rejects(callable $fn,int $status): void {try{$fn();throw new RuntimeException('Expected rejection');}catch(HttpError $e){expect($e->status===$status,'HTTP status');}}
 $p=new PDO('sqlite::memory:');$p->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);letters_migrate($p,false);letters_migrate($p,false);
-expect((int)$p->query('SELECT COUNT(*) FROM letter_templates')->fetchColumn()===1,'built-in is installed once');
-$template=$p->query('SELECT * FROM letter_templates')->fetch(PDO::FETCH_ASSOC);
+expect((int)$p->query('SELECT COUNT(*) FROM letter_templates')->fetchColumn()===2,'built-ins is installed once');
+$template=$p->query('SELECT * FROM letter_templates WHERE id="mant-v1"')->fetch(PDO::FETCH_ASSOC);
 $fields=letter_fields((object)['fields'=>(object)['recipients'=>['Иванову Ивану Ивановичу','Петровой Анне Сергеевне'],'body'=>'За участие <b>в проекте</b>','orderNumber'=>'15','orderDate'=>'2026-03-02']]);
 expect(letter_order($fields)==='Приказ № 15 от «02» марта 2026 г.','padded Russian date');
 $preview=letter_render($template,$fields,null);
@@ -44,3 +44,24 @@ rejects(fn()=>letter_fields((object)['fields'=>(object)['recipients'=>array_fill
 rejects(fn()=>letter_fields((object)['fields'=>(object)['orderDate'=>'2026-02-31']]),400);
 rejects(fn()=>letter_signature((object)['image'=>'data:image/svg+xml;base64,xxx','signerName'=>'x','signerRole'=>'y']),400);
 echo "PASS letters: migration, embedded layout, field escaping, dates, page count, signature rules, HTML sanitization and CSP\n";
+
+// Existing per-user placements become shared once and survive later migrations.
+$p->exec('DELETE FROM letter_template_signatures');
+$legacy=$sig+['placements'=>['mant-v1'=>['x'=>40,'y'=>60,'width'=>20]]];
+$st=$p->prepare('INSERT INTO letter_signatures VALUES (?,?)');$st->execute(['admin@example.test',json_encode($legacy)]);
+letters_migrate($p,false);
+$shared=json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='mant-v1'")->fetchColumn(),true);
+expect($shared['placement']['width']===20,'legacy placement migrates');
+$p->exec('DELETE FROM letter_signatures');letters_migrate($p,false);
+expect(json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='mant-v1'")->fetchColumn(),true)===$shared,'shared migration is idempotent');
+$certificate=$p->query("SELECT * FROM letter_templates WHERE id='forum-certificate-v1'")->fetch(PDO::FETCH_ASSOC);
+$render=letter_render($certificate,$fields,$sig,true);
+expect(substr_count($render['html'],'class="letter-wrap"')===2,'certificate batch');
+expect(str_contains($render['html'],'data:image/png;base64,'),'original certificate art retained');
+expect(str_contains($render['html'],'Иванову Ивану Ивановичу'),'certificate recipient');
+echo "PASS shared legacy migration and certificate rendering\n";
+
+$shared['signerName']='В. В. Шаталов';$st=$p->prepare("UPDATE letter_template_signatures SET data_json=? WHERE template_id='mant-v1'");$st->execute([json_encode($shared)]);letters_migrate($p,false);
+$seed=json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='forum-certificate-v1'")->fetchColumn(),true);
+expect($seed['signerName']==='В. В. Шаталов','certificate reuses MANT signer');
+expect(letter_placement($seed['placement'],$seed,$certificate)!==null,'seed placement fits certificate');

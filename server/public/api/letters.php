@@ -8,12 +8,55 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
         "letter_templates (id VARCHAR(64) PRIMARY KEY, name VARCHAR(200) NOT NULL, html $long NOT NULL, defaults_json $long NOT NULL, orientation VARCHAR(20) NOT NULL, created_by VARCHAR(191) NOT NULL, created_at VARCHAR(40) NOT NULL)",
         "letters (id VARCHAR(64) PRIMARY KEY, template_id VARCHAR(64) NOT NULL, author VARCHAR(191) NOT NULL, title VARCHAR(200) NOT NULL, status VARCHAR(20) NOT NULL, fields_json $long NOT NULL, revision INT NOT NULL, approval_json $long, note TEXT NOT NULL, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL)",
         "letter_signatures (email VARCHAR(191) PRIMARY KEY, data_json $long NOT NULL)",
+        "letter_template_signatures (template_id VARCHAR(64) PRIMARY KEY, data_json $long, revision INT NOT NULL DEFAULT 0)",
         "letter_events (id VARCHAR(64) PRIMARY KEY, letter_id VARCHAR(64) NOT NULL, revision INT NOT NULL, actor VARCHAR(191) NOT NULL, action VARCHAR(30) NOT NULL, note TEXT NOT NULL, created_at VARCHAR(40) NOT NULL)"
     ] as $table) $pdo->exec('CREATE TABLE IF NOT EXISTS '.$table.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4':''));
-    $st=$pdo->prepare('SELECT id FROM letter_templates WHERE id=?');$st->execute(['mant-v1']);
-    if (!$st->fetchColumn()) {
-        $st=$pdo->prepare(($mysql?'INSERT IGNORE':'INSERT OR IGNORE').' INTO letter_templates VALUES (?,?,?,?,?,?,?)');
-        $st->execute(['mant-v1','Благодарственное письмо МАНТ',file_get_contents(__DIR__.'/letter-assets/mant.html'),file_get_contents(__DIR__.'/letter-assets/mant.json'),'landscape','system',now()]);
+    foreach ([
+        ['mant-v1','Благодарственное письмо МАНТ','mant'],
+        ['forum-certificate-v1','Сертификат участника · Дружба народов — богатство Татарстана','forum-certificate']
+    ] as [$id,$name,$asset]) {
+        $st=$pdo->prepare('SELECT id FROM letter_templates WHERE id=?');$st->execute([$id]);
+        if (!$st->fetchColumn()) {
+            $st=$pdo->prepare(($mysql?'INSERT IGNORE':'INSERT OR IGNORE').' INTO letter_templates VALUES (?,?,?,?,?,?,?)');
+            $st->execute([$id,$name,file_get_contents(__DIR__.'/letter-assets/'.$asset.'.html'),file_get_contents(__DIR__.'/letter-assets/'.$asset.'.json'),'landscape','system',now()]);
+        }
+    }
+    // Migrate each template once. Prefer the signer of its most recent approval
+    // when several administrators had configured the same template.
+    $missing=$pdo->query('SELECT t.* FROM letter_templates t LEFT JOIN letter_template_signatures s ON s.template_id=t.id WHERE s.template_id IS NULL')->fetchAll(PDO::FETCH_ASSOC);
+    if ($missing) {
+        $legacy=[];
+        foreach ($pdo->query('SELECT email,data_json FROM letter_signatures ORDER BY email')->fetchAll(PDO::FETCH_ASSOC) as $row) $legacy[$row['email']]=json_decode($row['data_json'],true);
+        $recent=[];
+        foreach ($pdo->query("SELECT template_id,approval_json FROM letters WHERE status='approved' ORDER BY updated_at DESC,id DESC")->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (!isset($recent[$row['template_id']])) $recent[$row['template_id']]=json_decode($row['approval_json'],true)['approvedBy']??'';
+        }
+        foreach ($missing as $template) {
+            $signature=null;
+            $owners=array_unique(array_merge([$recent[$template['id']]??'', $template['created_by']],array_keys($legacy)));
+            foreach ($owners as $owner) {
+                $candidate=$legacy[$owner]??null;
+                if (!$candidate || !isset($candidate['placements'][$template['id']])) continue;
+                $signature=array_intersect_key($candidate,array_flip(['image','signerName','signerRole']));
+                $signature['placement']=letter_placement($candidate['placements'][$template['id']],$signature,$template);
+                break;
+            }
+            $st=$pdo->prepare(($mysql?'INSERT IGNORE':'INSERT OR IGNORE').' INTO letter_template_signatures VALUES (?,?,?)');
+            $st->execute([$template['id'],$signature?json_encode($signature,JSON_FLAGS):null,$signature?1:0]);
+        }
+    }
+    // The new certificate uses the same MANT signer's image in its own signature slot.
+    $st=$pdo->query("SELECT data_json FROM letter_template_signatures WHERE template_id='mant-v1'");
+    $mant=json_decode($st->fetchColumn()?:'null',true);
+    if ($mant && preg_replace('/[\s.]+/u','',$mant['signerName'])==='ВВШаталов') {
+        $defaults=json_decode(file_get_contents(__DIR__.'/letter-assets/forum-certificate.json'),true);
+        $image=getimagesizefromstring(base64_decode(explode(',',$mant['image'],2)[1],true));
+        $width=min(14.2,6.8/((1123/794)*$image[1]/$image[0]));
+        if($width<3)return;
+        $height=$width*(1123/794)*$image[1]/$image[0];
+        $signature=['image'=>$mant['image'],'signerName'=>$defaults['signerName'],'signerRole'=>$defaults['signerRole'],'placement'=>['x'=>51.75,'y'=>max(0,81.3-$height),'width'=>$width]];
+        $st=$pdo->prepare("UPDATE letter_template_signatures SET data_json=?,revision=1 WHERE template_id='forum-certificate-v1' AND data_json IS NULL AND revision=0");
+        $st->execute([json_encode($signature,JSON_FLAGS)]);
     }
 }
 function letter_dom(string $html): DOMDocument {
@@ -102,6 +145,34 @@ function letter_placement(mixed $value,array $signature,array $template): ?array
     if($out['width']<3||$out['width']>50||$out['x']<0||$out['y']<0||$out['x']+$out['width']>100.01||$out['y']+$height>100.01)fail(400,'Подпись выходит за границы листа. Уменьшите ее или переместите.');
     return $out;
 }
+// A saved signature belongs to a template. Personal images are only a source
+// for a template that has not yet been configured.
+function letter_template_signature(array $template,?array $me=null,bool $lock=false): array {
+    $row=one('SELECT data_json,revision FROM letter_template_signatures WHERE template_id=?'.($lock&&is_mysql()?' FOR UPDATE':''),[$template['id']]);
+    if (!$row) fail(409,'Обновите библиотеку макетов.');
+    $signature=$row['data_json']?json_decode($row['data_json'],true):null;
+    $source='';
+    if (!$signature && $me) {
+        $personal=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);
+        $source=$personal['data_json']??'';
+        if (!$source) {
+            $shared=one('SELECT data_json FROM letter_template_signatures WHERE data_json IS NOT NULL ORDER BY template_id LIMIT 1');
+            $source=$shared['data_json']??'';
+        }
+        if ($source) {
+            $signature=array_intersect_key(json_decode($source,true),array_flip(['image','signerName','signerRole']));
+            $defaults=json_decode($template['defaults_json'],true);
+            $signature['signerName']=$defaults['signerName']??$signature['signerName'];
+            $signature['signerRole']=$defaults['signerRole']??$signature['signerRole'];
+            $signature['placement']=null;
+        }
+    }
+    return ['signature'=>$signature,'revision'=>(int)$row['revision'],'version'=>hash('sha256',$template['id'].'|'.$row['revision'].'|'.($row['data_json']??$source))];
+}
+function letter_store_template_signature(string $id,array $signature,int $revision): void {
+    $st=q('UPDATE letter_template_signatures SET data_json=?,revision=revision+1 WHERE template_id=? AND revision=?',[json_encode($signature,JSON_FLAGS),$id,$revision]);
+    if ($st->rowCount()!==1) fail(409,'Подпись макета изменена другим пользователем. Откройте настройки заново.');
+}
 function letter_change(array $me,object $b): array {
     $action=(string)prop($b,'action','');$pdo=db();$pdo->beginTransaction();
     try {
@@ -122,11 +193,11 @@ function letter_change(array $me,object $b): array {
             $status='pending';$note='';$approval=null;$recipients=admin_emails();
         } elseif($action==='approve'){
             require_admin($me);if($status!=='pending')fail(409,'На согласовании уже другая версия письма');
-            $sig=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$sig)fail(400,'Сначала загрузите изображение подписи и укажите подписанта');
-            if(!hash_equals(hash('sha256',$sig['data_json']),(string)prop($b,'signatureVersion','')))fail(409,'Подпись изменилась. Проверьте ее и согласуйте письмо заново.');
-            $signature=json_decode($sig['data_json'],true);$template=letter_template($r['template_id']);
-            // Approval always uses the saved template setting, never a per-letter override.
-            $placement=letter_placement($signature['placements'][$r['template_id']]??null,$signature,$template);
+            $template=letter_template($r['template_id']);
+            $state=letter_template_signature($template,null,true);$signature=$state['signature'];
+            if (!$signature) fail(400,'Сначала настройте подпись для этого макета в библиотеке.');
+            if(!hash_equals($state['version'],(string)prop($b,'signatureVersion','')))fail(409,'Подпись макета изменилась. Проверьте ее и согласуйте документ заново.');
+            $placement=letter_placement($signature['placement']??null,$signature,$template);
             if($placement===null)fail(400,'Сначала настройте подпись для этого макета в библиотеке. Это нужно сделать один раз.');
             $snapshot=array_intersect_key($signature,array_flip(['image','signerName','signerRole']))+['placement'=>$placement,'approvedBy'=>$me['email'],'approvedName'=>$me['name'],'approvedAt'=>now(),'signedRevision'=>(int)$r['revision']+1];
             $approval=json_encode($snapshot,JSON_FLAGS);$status='approved';$note='';$recipients=[$r['author']];
@@ -149,7 +220,7 @@ function letter_order(array $f): string {
     $date=$date?('«'.substr($date,8,2).'» '.$months[(int)substr($date,5,2)-1].' '.substr($date,0,4).' г.'):'«____» ________________ 20___ г.';
     return 'Приказ № '.(($f['orderNumber']??'')?:'_____').' от '.$date;
 }
-function letter_render(array $template,array $fields,?array $approval,bool $print=false,string $title='Благодарственное письмо',bool $signatureEditor=false): array {
+function letter_render(array $template,array $fields,?array $approval,bool $print=false,string $title='Благодарственное письмо',bool $signatureEditor=false,bool $draftSignature=false): array {
     $nonce=base64_encode(random_bytes(18));
     $csp="default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'; script-src 'nonce-$nonce'; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'; sandbox allow-scripts allow-modals";
     $d=letter_dom($template['html']);$css='';foreach(iterator_to_array($d->getElementsByTagName('style')) as $s){$css.=$d->saveHTML($s);$s->parentNode->removeChild($s);}
@@ -163,7 +234,7 @@ function letter_render(array $template,array $fields,?array $approval,bool $prin
             if($key==='signature'){if($approval){$im=$page->createElement('img');$im->setAttribute('data-letter-signature','');$im->setAttribute('alt','Подпись');$im->setAttribute('style','max-width:100%;max-height:70px;object-fit:contain');$n->appendChild($im);}}
             else $n->appendChild($page->createTextNode($values[$key]??''));
         }
-        $pages.='<div class="letter-wrap"><div class="letter-paper">'.letter_inner($page->getElementsByTagName('body')->item(0)).($signatureEditor?'<div class="letter-draft">Предпросмотр подписи · не согласовано</div>':(!$approval?'<div class="letter-draft">Черновик · без подписи</div>':'')).'</div></div>';
+        $pages.='<div class="letter-wrap"><div class="letter-paper">'.letter_inner($page->getElementsByTagName('body')->item(0)).(($signatureEditor||$draftSignature)?'<div class="letter-draft">Предпросмотр подписи · не согласовано</div>':(!$approval?'<div class="letter-draft">Черновик · без подписи</div>':'')).'</div></div>';
         if(strlen($pages)>24*1024*1024)fail(413,'Комплект слишком большой. Разделите получателей на несколько писем.');
     }
     $land=$template['orientation']==='landscape';$w=$land?1123:794;$h=$land?794:1123;$pageSize=$land?'297mm 210mm':'210mm 297mm';$pageW=$land?'297mm':'210mm';$pageH=$land?'210mm':'297mm';
@@ -187,17 +258,37 @@ JS;
 }
 function handle_letters(string $path,string $method,array $me): void {
     if(!str_starts_with($path,'/api/letter'))return;
-    if($me['mustChange']??false)fail(403,'Сначала измените временный пароль');
+    if(($me['must_change']??$me['mustChange']??false))fail(403,'Сначала измените временный пароль');
     letters_migrate(db(),is_mysql());
     if($path==='/api/letter-templates'){
         if($method==='GET'){
-            $out=[];foreach(all('SELECT id,name,defaults_json,orientation,created_at,created_by FROM letter_templates ORDER BY created_at DESC') as $t){$t['defaults']=json_decode($t['defaults_json'],true);unset($t['defaults_json']);$out[]=$t;}send_json($out);
+            $out=[];foreach(all('SELECT id,name,defaults_json,orientation,created_at,created_by FROM letter_templates ORDER BY created_at DESC') as $t){$t['defaults']=json_decode($t['defaults_json'],true);unset($t['defaults_json']);$state=letter_template_signature($t);$t['signatureReady']=isset($state['signature']['placement']);$t['signatureVersion']=$state['version'];$out[]=$t;}send_json($out);
         }
         if($method==='POST'){require_admin($me);$b=read_json();$name=trim(clip(prop($b,'name'),200));if(!$name)fail(400,'Назовите макет');$clean=letter_sanitize((string)prop($b,'html',''));$id=uid();$orientation=prop($b,'orientation')==='portrait'?'portrait':'landscape';q('INSERT INTO letter_templates VALUES (?,?,?,?,?,?,?)',[$id,$name,$clean['html'],json_encode($clean['defaults']+['_fields'=>$clean['fields']],JSON_FLAGS),$orientation,$me['email'],now()]);send_json(['id'=>$id]);}
     }
     if($path==='/api/letter-signature'){
-        require_admin($me);if($method==='GET'){$s=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);send_json($s?(json_decode($s['data_json'],true)+['version'=>hash('sha256',$s['data_json'])]):null);}
-        if($method==='POST'){$sig=letter_signature(read_json());$old=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);$previous=$old?json_decode($old['data_json'],true):[];if(($previous['image']??'')===$sig['image']&&isset($previous['placements']))$sig['placements']=$previous['placements'];$pdo=db();$pdo->beginTransaction();try{q('DELETE FROM letter_signatures WHERE email=?',[$me['email']]);q('INSERT INTO letter_signatures VALUES (?,?)',[$me['email'],json_encode($sig,JSON_FLAGS)]);$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}send_json(['ok'=>true,'version'=>hash('sha256',json_encode($sig,JSON_FLAGS))]);}
+        require_admin($me);
+        if ($method==='GET' && isset($_GET['templateId'])) {
+            $state=letter_template_signature(letter_template((string)$_GET['templateId']),$me);
+            send_json(($state['signature']??[])+['version'=>$state['version']]);
+        }
+        if ($method==='POST') {
+            $b=read_json();
+            if (prop($b,'templateId')) {
+                $template=letter_template((string)$b->templateId);$signature=letter_signature($b);
+                $pdo=db();$pdo->beginTransaction();
+                try {
+                    $state=letter_template_signature($template,$me,true);
+                    if (!hash_equals($state['version'],(string)prop($b,'signatureVersion',''))) fail(409,'Подпись макета изменилась. Откройте настройки заново.');
+                    $signature['placement']=($state['signature']['image']??'')===$signature['image']?($state['signature']['placement']??null):null;
+                    letter_store_template_signature($template['id'],$signature,$state['revision']);
+                    $pdo->commit();
+                } catch (Throwable $e) {if($pdo->inTransaction())$pdo->rollBack();throw $e;}
+                send_json(['ok'=>true]);
+            }
+        }
+        if($method==='GET'){$s=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);send_json($s?(json_decode($s['data_json'],true)+['version'=>hash('sha256',$s['data_json'])]):null);}
+        if($method==='POST'){$sig=letter_signature($b);$old=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);$previous=$old?json_decode($old['data_json'],true):[];if(($previous['image']??'')===$sig['image']&&isset($previous['placements']))$sig['placements']=$previous['placements'];$pdo=db();$pdo->beginTransaction();try{q('DELETE FROM letter_signatures WHERE email=?',[$me['email']]);q('INSERT INTO letter_signatures VALUES (?,?)',[$me['email'],json_encode($sig,JSON_FLAGS)]);$pdo->commit();}catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}send_json(['ok'=>true,'version'=>hash('sha256',json_encode($sig,JSON_FLAGS))]);}
     }
     if($path==='/api/letters'){
         if($method==='GET'){
@@ -212,37 +303,36 @@ function handle_letters(string $path,string $method,array $me): void {
     }
     if($path==='/api/letter-signature-preview'&&$method==='POST'){
         require_admin($me);$b=read_json();$template=letter_template((string)prop($b,'templateId'));
-        $stored=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$stored)fail(400,'Сначала загрузите подпись.');
-        $sig=json_decode($stored['data_json'],true);
-        $sig['placement']=letter_placement($sig['placements'][$template['id']]??null,$sig,$template);
+        $state=letter_template_signature($template,$me);$sig=$state['signature'];if(!$sig)fail(400,'Сначала загрузите подпись.');
+        $sig['placement']=letter_placement($sig['placement']??null,$sig,$template);
         $defaults=json_decode($template['defaults_json'],true);
         $fields=['recipients'=>['Иванову Ивану Ивановичу'],'body'=>$defaults['body']??'','orderNumber'=>'1','orderDate'=>'2026-01-01'];
         $out=letter_render($template,$fields,$sig,false,$template['name'],true);
-        send_json(['html'=>$out['html'],'signatureVersion'=>hash('sha256',$stored['data_json']),'orientation'=>$template['orientation']]);
+        send_json(['html'=>$out['html'],'signatureVersion'=>$state['version'],'orientation'=>$template['orientation']]);
     }
     if($path==='/api/letter-signature-layout'&&$method==='POST'){
         require_admin($me);$b=read_json();$template=letter_template((string)prop($b,'templateId'));
         $pdo=db();$pdo->beginTransaction();
         try{
-            $stored=one('SELECT data_json FROM letter_signatures WHERE email=?',[$me['email']]);if(!$stored)fail(400,'Сначала загрузите подпись.');
-            if(!hash_equals(hash('sha256',$stored['data_json']),(string)prop($b,'signatureVersion','')))fail(409,'Подпись или ее положение изменились. Откройте настройки макета заново.');
-            $sig=json_decode($stored['data_json'],true);$placement=letter_placement(prop($b,'placement'),$sig,$template);
+            $state=letter_template_signature($template,$me,true);$sig=$state['signature'];if(!$sig)fail(400,'Сначала загрузите подпись.');
+            if(!hash_equals($state['version'],(string)prop($b,'signatureVersion','')))fail(409,'Подпись или ее положение изменились. Откройте настройки макета заново.');
+            $placement=letter_placement(prop($b,'placement'),$sig,$template);
             if($placement===null)fail(400,'Укажите положение подписи на макете.');
-            $sig['placements'][$template['id']]=$placement;$json=json_encode($sig,JSON_FLAGS);
-            $st=$pdo->prepare('UPDATE letter_signatures SET data_json=? WHERE email=? AND data_json=?');$st->execute([$json,$me['email'],$stored['data_json']]);
-            if($json!==$stored['data_json']&&$st->rowCount()!==1)fail(409,'Подпись изменилась. Откройте настройки макета заново.');
+            $sig['placement']=$placement;
+            letter_store_template_signature($template['id'],$sig,$state['revision']);
             $pdo->commit();
         }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
-        send_json(['ok'=>true,'version'=>hash('sha256',$json),'placement'=>$placement]);
+        send_json(['ok'=>true,'version'=>letter_template_signature($template)['version'],'placement'=>$placement]);
     }
     if($path==='/api/letter-preview'&&$method==='POST'){
-        $b=read_json();$t=letter_template((string)prop($b,'templateId'));$f=letter_fields($b);$out=letter_render($t,$f,null);send_json(['html'=>$out['html']]);
+        $b=read_json();$t=letter_template((string)prop($b,'templateId'));$f=letter_fields($b);$signature=letter_template_signature($t)['signature'];$out=letter_render($t,$f,$signature,false,$t['name'],false,$signature!==null);send_json(['html'=>$out['html']]);
     }
     if($path==='/api/letter-render'&&$method==='GET'){
         $r=letter_access($me,(string)($_GET['id']??''));if((int)($_GET['revision']??-1)!==(int)$r['revision'])fail(409,'Версия письма изменилась. Откройте письмо заново.');
         $print=($_GET['mode']??'')==='print';if($print&&$r['status']!=='approved')fail(403,'Печать с подписью доступна после согласования администратором');
-        $a=$r['status']==='approved'?json_decode($r['approval_json'],true):null;
-        $out=letter_render(letter_template($r['template_id']),json_decode($r['fields_json'],true),$a,$print,$r['title']);
+        $template=letter_template($r['template_id']);
+        $a=$r['status']==='approved'?json_decode($r['approval_json'],true):letter_template_signature($template)['signature'];
+        $out=letter_render($template,json_decode($r['fields_json'],true),$a,$print,$r['title'],false,$r['status']!=='approved'&&$a!==null);
         header('Content-Type: text/html; charset=utf-8');header('Cache-Control: private, no-store');header('Content-Security-Policy: '.$out['csp']);header('X-Content-Type-Options: nosniff');header('Referrer-Policy: no-referrer');echo $out['html'];exit;
     }
     fail(405,'Действие не поддерживается');
