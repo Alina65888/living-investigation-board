@@ -22,12 +22,17 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
             $st->execute([$id,$name,file_get_contents(__DIR__.'/letter-assets/'.$asset.'.html'),file_get_contents(__DIR__.'/letter-assets/'.$asset.'.json'),'landscape','system',now()]);
         }
     }
-    // Refresh the system certificate already installed on the hosting.
-    // Recipient data and shared signature settings are stored separately.
-    $st=$pdo->query("SELECT id FROM letter_templates WHERE id='forum-certificate-v1' AND created_by='system' AND html NOT LIKE '%/* certificate-v3 */%'");
-    if($st->fetchColumn()){
-        $st=$pdo->prepare("UPDATE letter_templates SET html=? WHERE id='forum-certificate-v1' AND created_by='system'");
-        $st->execute([file_get_contents(__DIR__.'/letter-assets/forum-certificate.html')]);
+    // Refresh built-in layouts without changing recipients or shared signatures.
+    foreach([
+        ['forum-certificate-v1','forum-certificate','certificate-v3'],
+        ['student-day-certificate-v1','student-day-certificate','student-certificate-v2']
+    ] as [$id,$asset,$version]){
+        $st=$pdo->prepare("SELECT id FROM letter_templates WHERE id=? AND created_by='system' AND html NOT LIKE ?");
+        $st->execute([$id,'%/* '.$version.' */%']);
+        if($st->fetchColumn()){
+            $st=$pdo->prepare("UPDATE letter_templates SET html=? WHERE id=? AND created_by='system'");
+            $st->execute([file_get_contents(__DIR__.'/letter-assets/'.$asset.'.html'),$id]);
+        }
     }
     // Migrate each template once. Prefer the signer of its most recent approval
     // when several administrators had configured the same template.

@@ -80,3 +80,9 @@ $studentPrint=letter_render($student,$fields,$studentSignature,true);
 expect(substr_count($studentPrint['html'],'class="letter-wrap"')===2,'student certificate batch');
 expect(str_contains($studentPrint['html'],'Казань, 2026 г.'),'student certificate footer matches diplomas');
 expect(str_contains($studentPrint['html'],'Иванову Ивану Ивановичу'),'student certificate recipient');
+
+$oldStudent=str_replace('/* student-certificate-v2 */','',$student['html']);
+$st=$p->prepare("UPDATE letter_templates SET html=? WHERE id='student-day-certificate-v1'");$st->execute([$oldStudent]);
+letters_migrate($p,false);
+expect(str_contains($p->query("SELECT html FROM letter_templates WHERE id='student-day-certificate-v1'")->fetchColumn(),'/* student-certificate-v2 */'),'installed student certificate receives typography fixes');
+expect(json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='student-day-certificate-v1'")->fetchColumn(),true)===$studentSignature,'student layout update preserves signature');
