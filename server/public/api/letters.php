@@ -23,7 +23,7 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
     }
     // Refresh the system certificate already installed on the hosting.
     // Recipient data and shared signature settings are stored separately.
-    $st=$pdo->query("SELECT id FROM letter_templates WHERE id='forum-certificate-v1' AND created_by='system' AND html NOT LIKE '%/* certificate-v2 */%'");
+    $st=$pdo->query("SELECT id FROM letter_templates WHERE id='forum-certificate-v1' AND created_by='system' AND html NOT LIKE '%/* certificate-v3 */%'");
     if($st->fetchColumn()){
         $st=$pdo->prepare("UPDATE letter_templates SET html=? WHERE id='forum-certificate-v1' AND created_by='system'");
         $st->execute([file_get_contents(__DIR__.'/letter-assets/forum-certificate.html')]);
