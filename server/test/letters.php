@@ -4,7 +4,7 @@ require __DIR__.'/../public/api/lib.php';
 function expect(bool $ok,string $message): void {if(!$ok)throw new RuntimeException($message);}
 function rejects(callable $fn,int $status): void {try{$fn();throw new RuntimeException('Expected rejection');}catch(HttpError $e){expect($e->status===$status,'HTTP status');}}
 $p=new PDO('sqlite::memory:');$p->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);letters_migrate($p,false);letters_migrate($p,false);
-expect((int)$p->query('SELECT COUNT(*) FROM letter_templates')->fetchColumn()===2,'built-ins is installed once');
+expect((int)$p->query('SELECT COUNT(*) FROM letter_templates')->fetchColumn()===3,'built-ins is installed once');
 $template=$p->query('SELECT * FROM letter_templates WHERE id="mant-v1"')->fetch(PDO::FETCH_ASSOC);
 $fields=letter_fields((object)['fields'=>(object)['recipients'=>['Иванову Ивану Ивановичу','Петровой Анне Сергеевне'],'body'=>'За участие <b>в проекте</b>','orderNumber'=>'15','orderDate'=>'2026-03-02']]);
 expect(letter_order($fields)==='Приказ № 15 от «02» марта 2026 г.','padded Russian date');
@@ -71,3 +71,12 @@ $st=$p->prepare("UPDATE letter_templates SET html=? WHERE id='forum-certificate-
 letters_migrate($p,false);
 expect(str_contains($p->query("SELECT html FROM letter_templates WHERE id='forum-certificate-v1'")->fetchColumn(),'/* certificate-v3 */'),'installed certificate receives the layout update');
 expect(json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='forum-certificate-v1'")->fetchColumn(),true)===$seed,'layout migration preserves the shared signature');
+
+$student=$p->query("SELECT * FROM letter_templates WHERE id='student-day-certificate-v1'")->fetch(PDO::FETCH_ASSOC);
+$studentSignature=json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='student-day-certificate-v1'")->fetchColumn(),true);
+expect($studentSignature['signerName']==='В. В. Шаталов','student certificate reuses shared MANT signature');
+expect(letter_placement($studentSignature['placement'],$studentSignature,$student)!==null,'student signature fits');
+$studentPrint=letter_render($student,$fields,$studentSignature,true);
+expect(substr_count($studentPrint['html'],'class="letter-wrap"')===2,'student certificate batch');
+expect(str_contains($studentPrint['html'],'Казань, 2026 г.'),'student certificate footer matches diplomas');
+expect(str_contains($studentPrint['html'],'Иванову Ивану Ивановичу'),'student certificate recipient');
