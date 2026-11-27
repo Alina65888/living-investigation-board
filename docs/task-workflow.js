@@ -1,8 +1,8 @@
-import {assigneeOptions,matchesAssignee} from './task-assignees.js?v=67';
-import {bindDraft,draftKey,saveDraft,loadDraft,clearDraft} from './drafts.js?v=67';
-import {nextStep,groupMyTasks,weekTasks} from './task-guidance.js?v=67';
-import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js?v=67';
-import {greeting} from './theme.js?v=67';
+import {assigneeOptions,matchesAssignee} from './task-assignees.js?v=68';
+import {bindDraft,draftKey,saveDraft,loadDraft,clearDraft} from './drafts.js?v=68';
+import {nextStep,groupMyTasks,weekTasks} from './task-guidance.js?v=68';
+import {api,apiUrl,session,isAdmin,canEditTask} from './workspace-store.js?v=68';
+import {greeting} from './theme.js?v=68';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const labels={planned:'Запланирована',doing:'В работе',blocked:'Нужна помощь',approval:'На проверке',done:'Готово'};
 const day=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Europe/Moscow'});

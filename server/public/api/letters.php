@@ -21,6 +21,13 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
             $st->execute([$id,$name,file_get_contents(__DIR__.'/letter-assets/'.$asset.'.html'),file_get_contents(__DIR__.'/letter-assets/'.$asset.'.json'),'landscape','system',now()]);
         }
     }
+    // Refresh the system certificate already installed on the hosting.
+    // Recipient data and shared signature settings are stored separately.
+    $st=$pdo->query("SELECT id FROM letter_templates WHERE id='forum-certificate-v1' AND created_by='system' AND html NOT LIKE '%/* certificate-v2 */%'");
+    if($st->fetchColumn()){
+        $st=$pdo->prepare("UPDATE letter_templates SET html=? WHERE id='forum-certificate-v1' AND created_by='system'");
+        $st->execute([file_get_contents(__DIR__.'/letter-assets/forum-certificate.html')]);
+    }
     // Migrate each template once. Prefer the signer of its most recent approval
     // when several administrators had configured the same template.
     $missing=$pdo->query('SELECT t.* FROM letter_templates t LEFT JOIN letter_template_signatures s ON s.template_id=t.id WHERE s.template_id IS NULL')->fetchAll(PDO::FETCH_ASSOC);
@@ -306,7 +313,7 @@ function handle_letters(string $path,string $method,array $me): void {
         $state=letter_template_signature($template,$me);$sig=$state['signature'];if(!$sig)fail(400,'Сначала загрузите подпись.');
         $sig['placement']=letter_placement($sig['placement']??null,$sig,$template);
         $defaults=json_decode($template['defaults_json'],true);
-        $fields=['recipients'=>['Иванову Ивану Ивановичу'],'body'=>$defaults['body']??'','orderNumber'=>'1','orderDate'=>'2026-01-01'];
+        $fields=['recipients'=>['Ивану Иванову'],'body'=>$defaults['body']??'','orderNumber'=>'1','orderDate'=>'2026-01-01'];
         $out=letter_render($template,$fields,$sig,false,$template['name'],true);
         send_json(['html'=>$out['html'],'signatureVersion'=>$state['version'],'orientation'=>$template['orientation']]);
     }

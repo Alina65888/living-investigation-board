@@ -65,3 +65,9 @@ $shared['signerName']='В. В. Шаталов';$st=$p->prepare("UPDATE letter_te
 $seed=json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='forum-certificate-v1'")->fetchColumn(),true);
 expect($seed['signerName']==='В. В. Шаталов','certificate reuses MANT signer');
 expect(letter_placement($seed['placement'],$seed,$certificate)!==null,'seed placement fits certificate');
+
+$oldCertificate=str_replace('/* certificate-v2 */','',$certificate['html']);
+$st=$p->prepare("UPDATE letter_templates SET html=? WHERE id='forum-certificate-v1'");$st->execute([$oldCertificate]);
+letters_migrate($p,false);
+expect(str_contains($p->query("SELECT html FROM letter_templates WHERE id='forum-certificate-v1'")->fetchColumn(),'/* certificate-v2 */'),'installed certificate receives the layout update');
+expect(json_decode($p->query("SELECT data_json FROM letter_template_signatures WHERE template_id='forum-certificate-v1'")->fetchColumn(),true)===$seed,'layout migration preserves the shared signature');
