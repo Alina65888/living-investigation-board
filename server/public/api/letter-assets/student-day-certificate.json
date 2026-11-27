@@ -1,0 +1,10 @@
+{
+  "signerName": "В. В. Шаталов",
+  "signerRole": "Председатель\nРМОО «Молодежная Ассамблея\nнародов Татарстана»",
+  "_fields": [
+    "recipient",
+    "signerRole",
+    "signerName",
+    "signature"
+  ]
+}

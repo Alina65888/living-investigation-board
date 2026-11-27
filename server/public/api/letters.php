@@ -13,7 +13,8 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
     ] as $table) $pdo->exec('CREATE TABLE IF NOT EXISTS '.$table.($mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4':''));
     foreach ([
         ['mant-v1','Благодарственное письмо МАНТ','mant'],
-        ['forum-certificate-v1','Сертификат участника · Дружба народов — богатство Татарстана','forum-certificate']
+        ['forum-certificate-v1','Сертификат участника · Дружба народов — богатство Татарстана','forum-certificate'],
+        ['student-day-certificate-v1','Сертификат участника · День иностранного студента — 2026','student-day-certificate']
     ] as [$id,$name,$asset]) {
         $st=$pdo->prepare('SELECT id FROM letter_templates WHERE id=?');$st->execute([$id]);
         if (!$st->fetchColumn()) {
@@ -52,18 +53,23 @@ function letters_migrate(PDO $pdo, bool $mysql): void {
             $st->execute([$template['id'],$signature?json_encode($signature,JSON_FLAGS):null,$signature?1:0]);
         }
     }
-    // The new certificate uses the same MANT signer's image in its own signature slot.
+    // The certificates use the same MANT signer's image in its own signature slot.
     $st=$pdo->query("SELECT data_json FROM letter_template_signatures WHERE template_id='mant-v1'");
     $mant=json_decode($st->fetchColumn()?:'null',true);
     if ($mant && preg_replace('/[\s.]+/u','',$mant['signerName'])==='ВВШаталов') {
-        $defaults=json_decode(file_get_contents(__DIR__.'/letter-assets/forum-certificate.json'),true);
         $image=getimagesizefromstring(base64_decode(explode(',',$mant['image'],2)[1],true));
-        $width=min(14.2,6.8/((1123/794)*$image[1]/$image[0]));
-        if($width<3)return;
-        $height=$width*(1123/794)*$image[1]/$image[0];
-        $signature=['image'=>$mant['image'],'signerName'=>$defaults['signerName'],'signerRole'=>$defaults['signerRole'],'placement'=>['x'=>51.75,'y'=>max(0,81.3-$height),'width'=>$width]];
-        $st=$pdo->prepare("UPDATE letter_template_signatures SET data_json=?,revision=1 WHERE template_id='forum-certificate-v1' AND data_json IS NULL AND revision=0");
-        $st->execute([json_encode($signature,JSON_FLAGS)]);
+        foreach([
+            ['forum-certificate-v1','forum-certificate',51.75,81.3,14.2,6.8],
+            ['student-day-certificate-v1','student-day-certificate',60,83.5,16,8]
+        ] as [$id,$asset,$x,$bottom,$maxWidth,$maxHeight]){
+            $defaults=json_decode(file_get_contents(__DIR__.'/letter-assets/'.$asset.'.json'),true);
+            $width=min($maxWidth,$maxHeight/((1123/794)*$image[1]/$image[0]));
+            if($width<3)continue;
+            $height=$width*(1123/794)*$image[1]/$image[0];
+            $signature=['image'=>$mant['image'],'signerName'=>$defaults['signerName'],'signerRole'=>$defaults['signerRole'],'placement'=>['x'=>$x,'y'=>max(0,$bottom-$height),'width'=>$width]];
+            $st=$pdo->prepare("UPDATE letter_template_signatures SET data_json=?,revision=1 WHERE template_id=? AND data_json IS NULL AND revision=0");
+            $st->execute([json_encode($signature,JSON_FLAGS),$id]);
+        }
     }
 }
 function letter_dom(string $html): DOMDocument {
@@ -233,7 +239,7 @@ function letter_render(array $template,array $fields,?array $approval,bool $prin
     $d=letter_dom($template['html']);$css='';foreach(iterator_to_array($d->getElementsByTagName('style')) as $s){$css.=$d->saveHTML($s);$s->parentNode->removeChild($s);}
     $body=$d->getElementsByTagName('body')->item(0);$fragment=$body?letter_inner($body):'';
     $placement=$approval['placement']??null;
-    $defaults=json_decode($template['defaults_json'],true);$names=$fields['recipients']?:['Имя Отчество Фамилия'];if(!$print)$names=array_slice($names,0,1);
+    $defaults=json_decode($template['defaults_json'],true);$names=$fields['recipients']?:['Ивану Иванову'];if(!$print)$names=array_slice($names,0,1);
     $pages='';foreach($names as $index=>$name){
         $page=letter_dom('<html><body>'.$fragment.'</body></html>');
         $values=['recipient'=>$name,'body'=>$fields['body'],'order'=>letter_order($fields),'orderNumber'=>$fields['orderNumber'],'orderDate'=>$fields['orderDate'],'signerName'=>$approval['signerName']??$defaults['signerName']??'','signerRole'=>$approval['signerRole']??$defaults['signerRole']??''];
