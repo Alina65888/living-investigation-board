@@ -1,4 +1,4 @@
-import {apiUrl,hosted} from './workspace-store.js?v=66';
+import {apiUrl,hosted} from './workspace-store.js?v=67';
 // Server-owned Google connection; secrets and OAuth tokens never reach this module.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(path,body){
